@@ -855,7 +855,8 @@ function detectCalipers(quiet){
         const why = s.n < 12 ? 'pocos triángulos' : span < 20 ? 'arco pequeño' : span > 130 ? 'anillo' :
           s.rmin <= R*.2 ? 'llega al buje' : s.rmax >= R*.97 ? 'llega al neumático' :
           ext <= R*.25 ? 'pequeño' : ext >= R*1.15 ? 'grande' : s.lat/s.n > inboard ? 'en la cara' : '';
-        isCal.set(k, !why);
+        // lo que ya era pinza (por color) solo deja de serlo si es claramente el disco
+        isCal.set(k, m.userData.role==='calipers' ? why!=='anillo' : !why);
         if(!quiet && why) console.log(`${m.userData.label} trozo ${k}: ${why}`, {arco:span, rmin:+(s.rmin/R).toFixed(2), rmax:+(s.rmax/R).toFixed(2), tam:+(ext/R).toFixed(2), n:s.n});
       });
       // las pinzas detalladas van en muchos trozos (cuerpo, pistones, tornillos): los trozos
