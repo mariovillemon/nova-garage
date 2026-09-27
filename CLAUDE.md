@@ -80,6 +80,11 @@ uvicorn main:app --reload   # http://localhost:8000
   triángulos que no miran al proyector (`keepFacing`). Cada vinilo guarda punto y normal en
   coordenadas del coche sin rebajar; cuelgan de `vinylRoot`, que baja con `applyLow`. Las franjas
   se proyectan desde arriba a lo largo de todo el coche. Van en el build (`vinylSave/vinylLoad`).
+- Wrap completo desde plantilla de rotulista: la imagen (hasta 3000 px, JPEG) se guarda una vez
+  en el build (`wrapSrc`); cada zona (`WRAP_ZONES`: laterales, capó, techo, maletero, frontal,
+  trasera) es un vinilo `wrap` con su recorte, giro en pasos de 90° y espejo, proyectado desde su
+  lado sobre toda la zona. Capó/techo/maletero ocupan un tramo del largo ajustable. Las imágenes
+  con marcas de terceros son del usuario: no se suben al repo.
 - `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
 
 ## Pendiente (por prioridad)

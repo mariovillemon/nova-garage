@@ -92,6 +92,12 @@ details.cat[open] summary::after{content:"–"}
 .bcard{position:relative}
 .bcard .del{position:absolute;top:4px;right:4px;padding:0 7px;background:var(--panel);font-size:13px;line-height:22px}
 #genTools:empty{display:none}
+#wrapEd{position:fixed;inset:0;z-index:20;background:rgba(10,12,15,.92);display:flex;flex-direction:column;padding:12px 16px;gap:10px;color:#e9ecef}
+#wrapEd[hidden]{display:none}
+#wrapEd .row button{color:#e9ecef;border-color:#3a414a}
+#wrapEd .row button[aria-pressed="true"]{background:#f2b705;color:#14171b;border-color:#f2b705}
+#wrapEd canvas{flex:1;min-height:0;width:100%;cursor:crosshair;touch-action:none}
+#wrapEd p{margin:0;font-size:13px;color:#98a1ab}
 @media (max-width:820px){
   body{grid-template-columns:1fr;grid-template-rows:48vh 1fr;overflow:auto}
   aside{border-left:0;border-top:1px solid var(--line)}
@@ -99,6 +105,15 @@ details.cat[open] summary::after{content:"–"}
 </style>
 </head>
 <body>
+<div id="wrapEd" hidden>
+  <div class="row" style="justify-content:space-between">
+    <b style="font:700 20px 'Barlow Condensed',sans-serif">Zonas del wrap</b>
+    <button id="wrapClose">Listo</button>
+  </div>
+  <div class="row" id="wrapZones"></div>
+  <p id="wrapHelp">Elige una zona y arrastra un rectángulo sobre la plantilla para marcarla. Se aplica al soltar.</p>
+  <canvas id="wrapCv"></canvas>
+</div>
 <div id="stage">
   <div id="brand">Nøva Garage<small>Configurador de modificaciones</small></div>
   <div id="status"></div>
@@ -192,6 +207,10 @@ details.cat[open] summary::after{content:"–"}
         <button data-vinyl="number">Número</button>
         <button data-vinyl="text">Texto</button>
         <label class="file" style="background:transparent;color:var(--ink);border-color:var(--line);font-weight:400">Imagen (PNG)<input id="vinylFile" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="file">Wrap completo (plantilla)<input id="wrapFile" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+        <button id="wrapOpen" hidden>Editar zonas del wrap</button>
       </div>
       <div id="vinylList" style="margin-top:10px"></div>
       <div id="vinylEdit" hidden></div>
@@ -2428,7 +2447,7 @@ async function saveBuild(){
     id: currentBuild && currentBuild.name===name ? currentBuild.id : undefined,
     car: currentCar, state: JSON.parse(JSON.stringify(state)), ops,
     wheels: wheelState.meta ? {meta:wheelState.meta, rimIn:wheelState.rimIn, flip:wheelState.flip} : null,
-    vinyls: vinylSave(),
+    vinyls: vinylSave(), wrapSrc: vinyls.some(v=>v.type==='wrap') ? wrapSrc : null,
     addons: addonRoot.children.map(o=>({
       cat:o.userData.category, name:o.userData.name, paint:o.userData.paint,
       meta:o.userData.meta || null, gen:o.userData.gen ? {type:o.userData.gen.type, p:o.userData.gen.p} : null,
@@ -2490,7 +2509,7 @@ async function loadBuild(id){
       obj.userData.hid.forEach(m=>m.visible = true);
       obj.userData.hid = meshesById(a.hid||[]); obj.userData.hid.forEach(m=>m.visible = false);
     }
-    await vinylLoad(b.vinyls);
+    await vinylLoad(b.vinyls, b.wrapSrc);
     selectAddon(null); buildAddonList(); buildMeshList();
     currentBuild = {id:b.id, name:b.name};
     setCarName(b.name, b.carName + (b.car ? ` · por ${b.car.author}` : ''));
@@ -2528,8 +2547,17 @@ const VINYL = {
   stripes:{label:'Franjas racing', p:{w:['Ancho de cada franja (cm)',5,45,22], gap:['Separación (cm)',0,30,8]}},
   number: {label:'Número',         p:{size:['Tamaño (cm)',15,90,45], rot:['Giro (°)',-180,180,0]}},
   text:   {label:'Texto',          p:{size:['Ancho (cm)',20,250,110], rot:['Giro (°)',-180,180,0]}},
-  image:  {label:'Imagen',         p:{size:['Ancho (cm)',10,250,60], rot:['Giro (°)',-180,180,0]}}
+  image:  {label:'Imagen',         p:{size:['Ancho (cm)',10,250,60], rot:['Giro (°)',-180,180,0]}},
+  wrap:   {label:'Wrap',           p:{}}
 };
+// Zonas de una plantilla de rotulista. Capó, techo y maletero ocupan un tramo del largo
+// (en % desde el morro), ajustable.
+const WRAP_ZONES = {
+  left:{label:'Lateral izquierdo'}, right:{label:'Lateral derecho'},
+  hood:{label:'Capó', span:[0,33]}, roof:{label:'Techo', span:[33,76]}, trunk:{label:'Maletero', span:[76,100]},
+  front:{label:'Frontal'}, rear:{label:'Trasera'}
+};
+let wrapImg = null, wrapSrc = null;
 let vinyls = [], activeVinyl = null, vinylPlacing = null;   // vinylPlacing: {type} o {move:v}
 const vinylTargets = ()=>meshes.filter(m=>m.visible && !m.userData.addon && m.userData.role==='body' && m.geometry.attributes.normal);
 
@@ -2550,6 +2578,13 @@ function vinylTexture(v){
     cx.font = font; const tw = Math.ceil(cx.measureText(v.text||' ').width)+40;
     cv.width = Math.min(4096, tw); cv.height = 240;
     cx.font = font; cx.fillStyle = v.color; cx.textBaseline = 'middle'; cx.fillText(v.text, 20, 128);
+  } else if(v.type==='wrap' && wrapImg){
+    // recorte de la plantilla, con giro en pasos de 90° y espejo
+    const [x0,y0,x1,y1] = v.crop, W = wrapImg.width, H = wrapImg.height;
+    const sw = Math.max(1,(x1-x0)*W), sh = Math.max(1,(y1-y0)*H), q = ((v.rot||0)%4+4)%4;
+    cv.width = q%2 ? sh : sw; cv.height = q%2 ? sw : sh;
+    cx.translate(cv.width/2, cv.height/2); cx.rotate(q*Math.PI/2); if(v.mirror) cx.scale(-1,1);
+    cx.drawImage(wrapImg, x0*W, y0*H, sw, sh, -sw/2, -sh/2, sw, sh);
   } else if(v.type==='image' && v._img){
     cv.width = v._img.width; cv.height = v._img.height; cx.drawImage(v._img,0,0);
   }
@@ -2561,6 +2596,29 @@ function vinylTexture(v){
 // Caja de proyección: centro, orientación y tamaño en coordenadas del mundo
 function vinylBox(v){
   const d = state.low/1000, L = axes.len, A = axes.lat;
+  if(v.type==='wrap'){
+    const f = carFrame(); if(!f) return null;
+    const {S,C,F} = f, up = new THREE.Vector3(0,1,0), fv = new THREE.Vector3(); fv[L] = F;
+    const lat = new THREE.Vector3(); lat[A] = 1;
+    const basis = (x,y,z)=>new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z));
+    const pos = C.clone(); pos.y -= d;
+    const z = WRAP_ZONES[v.zone];
+    if(v.zone==='left' || v.zone==='right'){
+      // izquierda del conductor = arriba × delante
+      const n = new THREE.Vector3().crossVectors(up, fv); if(v.zone==='right') n.negate();
+      pos.addScaledVector(n, S[A]/4);
+      return {pos, rot:basis(new THREE.Vector3().crossVectors(up,n), up, n), size:new THREE.Vector3(S[L]*1.04, S.y*1.04, S[A]/2+.02), facing:n, minDot:.25};
+    }
+    if(z.span){
+      const [a,b] = [v.p.a ?? z.span[0], v.p.b ?? z.span[1]].map(x=>x/100);
+      pos.addScaledVector(fv, S[L]*(.5 - (a+b)/2)); pos.y += S.y/4;
+      const x = fv.clone().negate();   // en la plantilla el morro suele quedar a la izquierda
+      return {pos, rot:basis(x, new THREE.Vector3().crossVectors(up,x), up), size:new THREE.Vector3(S[L]*Math.max(.02,b-a), S[A]*1.04, S.y/2+.1), facing:up, minDot:.35};
+    }
+    const n = v.zone==='front' ? fv.clone() : fv.clone().negate();
+    pos.addScaledVector(n, S[L]/4);
+    return {pos, rot:basis(new THREE.Vector3().crossVectors(up,n), up, n), size:new THREE.Vector3(S[A]*1.04, S.y*1.04, S[L]/2), facing:n, minDot:.3};
+  }
   if(v.type==='stripes'){
     // de morro a culo por el centro, proyectadas desde arriba
     const f = carFrame(); if(!f) return null;
@@ -2634,7 +2692,7 @@ function removeVinyl(v){
 }
 function clearVinyls(){ [...vinyls].forEach(removeVinyl); vinylPlacing = null; }
 function rebuildVinyls(){ vinyls.forEach(buildVinyl); }
-const vinylName = v=>`${VINYL[v.type].label}${v.text ? ': '+v.text : ''}`;
+const vinylName = v=>v.type==='wrap' ? `Wrap: ${WRAP_ZONES[v.zone].label}` : `${VINYL[v.type].label}${v.text ? ': '+v.text : ''}`;
 
 function buildVinylList(){
   const box = $('vinylList'); box.innerHTML = '';
@@ -2656,7 +2714,7 @@ function buildVinylList(){
   const row = document.createElement('div'); row.className = 'row'; row.style.marginTop = '10px';
   const color = (label, key)=>{ const i = document.createElement('input'); i.type = 'color'; i.value = v[key]; i.title = label; i.setAttribute('aria-label', label);
     i.oninput = ()=>{ v[key] = i.value; later(); }; row.append(i); };
-  if(v.type!=='image') color('Color', 'color');
+  if(v.type!=='image' && v.type!=='wrap') color('Color', 'color');
   if(v.type==='number') color('Fondo', 'bg');
   if(v.type==='number' || v.type==='text'){
     const i = document.createElement('input'); i.type = 'search'; i.value = v.text; i.setAttribute('aria-label','Texto del vinilo');
@@ -2668,7 +2726,19 @@ function buildVinylList(){
   ed.append(row);
   const acts = document.createElement('div'); acts.className = 'row'; acts.style.marginTop = '8px';
   const btn = (txt, fn)=>{ const b = document.createElement('button'); b.textContent = txt; b.onclick = fn; acts.append(b); };
-  if(v.type!=='stripes'){
+  if(v.type==='wrap'){
+    const z = WRAP_ZONES[v.zone];
+    if(z.span) [['a','Desde (% del largo)',z.span[0]],['b','Hasta (% del largo)',z.span[1]]].forEach(([k,label,def])=>{
+      const lab = document.createElement('label'); lab.className = 'sl';
+      const val = document.createElement('b'); val.textContent = v.p[k] ?? def; lab.append(label+' ', val);
+      const r = document.createElement('input'); r.type = 'range'; r.min = 0; r.max = 100; r.value = v.p[k] ?? def;
+      r.oninput = ()=>{ v.p[k] = +r.value; val.textContent = r.value; later(); };
+      ed.insertBefore(r, row); ed.insertBefore(lab, r);
+    });
+    btn('Girar 90°', ()=>{ v.rot = ((v.rot||0)+1)%4; buildVinyl(v); });
+    btn('Espejo', ()=>{ v.mirror = !v.mirror; buildVinyl(v); });
+    btn('Cambiar recorte', ()=>openWrapEd(v.zone));
+  } else if(v.type!=='stripes'){
     btn('Recolocar', ()=>{ vinylPlacing = {move:v}; flash('Toca la carrocería donde quieras moverlo'); });
     btn('Duplicar al otro lado', ()=>{
       const L = axes.len, A = axes.lat, C = carFrame()?.C || new THREE.Vector3();
@@ -2719,9 +2789,13 @@ $('vinylFile').onchange = e=>{
   rd.readAsDataURL(f);
 };
 // para builds
-const vinylSave = ()=>vinyls.map(v=>({type:v.type, p:v.p, color:v.color, bg:v.bg, text:v.text, pos:v.pos, n:v.n, src:v.src}));
-async function vinylLoad(list){
+const vinylSave = ()=>vinyls.map(v=>({type:v.type, p:v.p, color:v.color, bg:v.bg, text:v.text, pos:v.pos, n:v.n, src:v.src,
+                                     zone:v.zone, crop:v.crop, rot:v.rot, mirror:v.mirror}));
+const loadImg = src=>new Promise(r=>{ const i = new Image(); i.onload = ()=>r(i); i.onerror = ()=>r(null); i.src = src; });
+async function vinylLoad(list, wsrc){
   clearVinyls();
+  wrapSrc = wsrc || null; wrapImg = wsrc ? await loadImg(wsrc) : null; $('wrapOpen').hidden = !wrapImg;
+  list = (list||[]).filter(v=>v.type!=='wrap' || wrapImg);
   for(const s of list||[]){
     const v = {...newVinyl(s.type), ...s, p:{...vinylDefaults(s.type), ...s.p}};
     if(v.type==='image'){ if(!v.src) continue; v._img = await new Promise(r=>{ const i = new Image(); i.onload = ()=>r(i); i.onerror = ()=>r(null); i.src = v.src; }); if(!v._img) continue; }
@@ -2730,6 +2804,81 @@ async function vinylLoad(list){
   activeVinyl = null; buildVinylList();
 }
 buildVinylList();
+
+// ---------- editor de la plantilla del wrap ----------
+let wrapZone = 'left', wrapDrag = null;
+const wrapVinyl = zone=>vinyls.find(v=>v.type==='wrap' && v.zone===zone);
+function wrapLayout(){
+  const cv = $('wrapCv'), r = cv.getBoundingClientRect();
+  cv.width = r.width*devicePixelRatio; cv.height = r.height*devicePixelRatio;
+  const k = Math.min(cv.width/wrapImg.width, cv.height/wrapImg.height);
+  return {cv, k, ox:(cv.width-wrapImg.width*k)/2, oy:(cv.height-wrapImg.height*k)/2, W:wrapImg.width*k, H:wrapImg.height*k};
+}
+function drawWrapEd(){
+  const g = wrapLayout(), cx = g.cv.getContext('2d');
+  cx.clearRect(0,0,g.cv.width,g.cv.height); cx.drawImage(wrapImg, g.ox, g.oy, g.W, g.H);
+  const rect = (c, col, label)=>{
+    const x = g.ox+c[0]*g.W, y = g.oy+c[1]*g.H, w = (c[2]-c[0])*g.W, h = (c[3]-c[1])*g.H;
+    cx.lineWidth = 2*devicePixelRatio; cx.strokeStyle = col; cx.strokeRect(x,y,w,h);
+    if(label){ cx.font = `600 ${13*devicePixelRatio}px Barlow,sans-serif`; const tw = cx.measureText(label).width;
+      cx.fillStyle = col; cx.fillRect(x, y, tw+10*devicePixelRatio, 20*devicePixelRatio);
+      cx.fillStyle = '#14171b'; cx.fillText(label, x+5*devicePixelRatio, y+15*devicePixelRatio); }
+  };
+  Object.keys(WRAP_ZONES).forEach(z=>{ const v = wrapVinyl(z); if(v) rect(v.crop, z===wrapZone ? '#f2b705' : '#9fd6c3', WRAP_ZONES[z].label); });
+  if(wrapDrag) rect(wrapDrag.c, '#f2b705');
+  $('wrapZones').innerHTML = '';
+  Object.entries(WRAP_ZONES).forEach(([z,{label}])=>{
+    const b = document.createElement('button'); b.textContent = (wrapVinyl(z) ? '✓ ' : '') + label;
+    b.setAttribute('aria-pressed', z===wrapZone); b.onclick = ()=>{ wrapZone = z; drawWrapEd(); };
+    $('wrapZones').append(b);
+  });
+  if(wrapVinyl(wrapZone)){ const b = document.createElement('button'); b.textContent = 'Quitar esta zona';
+    b.onclick = ()=>{ removeVinyl(wrapVinyl(wrapZone)); drawWrapEd(); }; $('wrapZones').append(b); }
+}
+function openWrapEd(zone){
+  if(!wrapImg) return;
+  if(zone) wrapZone = zone;
+  $('wrapEd').hidden = false; requestAnimationFrame(drawWrapEd);
+}
+{
+  const cv = $('wrapCv');
+  const at = e=>{ const g = wrapLayout(), r = cv.getBoundingClientRect();
+    const x = ((e.clientX-r.left)*devicePixelRatio-g.ox)/g.W, y = ((e.clientY-r.top)*devicePixelRatio-g.oy)/g.H;
+    return [Math.min(1,Math.max(0,x)), Math.min(1,Math.max(0,y))]; };
+  cv.onpointerdown = e=>{ cv.setPointerCapture(e.pointerId); const p = at(e); wrapDrag = {p, c:[...p,...p]}; };
+  cv.onpointermove = e=>{ if(!wrapDrag) return; const p = at(e), a = wrapDrag.p;
+    wrapDrag.c = [Math.min(a[0],p[0]), Math.min(a[1],p[1]), Math.max(a[0],p[0]), Math.max(a[1],p[1])]; drawWrapEd(); };
+  cv.onpointerup = ()=>{
+    if(!wrapDrag) return; const c = wrapDrag.c; wrapDrag = null;
+    if(c[2]-c[0] < .01 || c[3]-c[1] < .01){ drawWrapEd(); return; }
+    let v = wrapVinyl(wrapZone);
+    if(v){ v.crop = c; buildVinyl(v); }
+    else v = addVinyl({type:'wrap', zone:wrapZone, crop:c, rot:0, mirror:false, p:{}});
+    // siguiente zona sin marcar
+    const next = Object.keys(WRAP_ZONES).find(z=>!wrapVinyl(z)); if(next) wrapZone = next;
+    drawWrapEd();
+  };
+  addEventListener('resize', ()=>{ if(!$('wrapEd').hidden) drawWrapEd(); });
+}
+$('wrapClose').onclick = ()=>{ $('wrapEd').hidden = true; buildVinylList(); };
+$('wrapOpen').onclick = ()=>openWrapEd();
+$('wrapFile').onchange = e=>{
+  const f = e.target.files[0]; if(!f) return; e.target.value = '';
+  if(!vinylTargets().length){ flash('No hay piezas marcadas como carrocería para vinilar'); return; }
+  const rd = new FileReader();
+  rd.onload = async ()=>{
+    // hasta 3000 px en JPEG: buena definición sin que el build pese demasiado
+    const img = await loadImg(rd.result); if(!img){ flash('No se pudo leer la imagen'); return; }
+    const k = Math.min(1, 3000/Math.max(img.width, img.height)), cv = document.createElement('canvas');
+    cv.width = Math.round(img.width*k); cv.height = Math.round(img.height*k);
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    wrapSrc = cv.toDataURL('image/jpeg', .9); wrapImg = await loadImg(wrapSrc);
+    vinyls.filter(v=>v.type==='wrap').forEach(removeVinyl);
+    $('wrapOpen').hidden = false; wrapZone = 'left'; openWrapEd();
+  };
+  rd.readAsDataURL(f);
+};
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('wrapEd').hidden) $('wrapClose').click(); });
 
 buildEditor(); demoCar(); resize();
 (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();
