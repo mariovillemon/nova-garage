@@ -2548,7 +2548,9 @@ const VINYL = {
   number: {label:'Número',         p:{size:['Tamaño (cm)',15,90,45], rot:['Giro (°)',-180,180,0]}},
   text:   {label:'Texto',          p:{size:['Ancho (cm)',20,250,110], rot:['Giro (°)',-180,180,0]}},
   image:  {label:'Imagen',         p:{size:['Ancho (cm)',10,250,60], rot:['Giro (°)',-180,180,0]}},
-  wrap:   {label:'Wrap',           p:{}}
+  wrap:   {label:'Wrap',           p:{ox:['Mover horizontal (cm)',-150,150,0], oy:['Mover vertical (cm)',-80,80,0],
+                                     sx:['Escala horizontal (%)',40,160,100], sy:['Escala vertical (%)',40,160,100],
+                                     fr:['Giro fino (°)',-20,20,0]}}
 };
 // Zonas de una plantilla de rotulista. Capó, techo y maletero ocupan un tramo del largo
 // (en % desde el morro), ajustable.
@@ -2600,24 +2602,34 @@ function vinylBox(v){
     const f = carFrame(); if(!f) return null;
     const {S,C,F} = f, up = new THREE.Vector3(0,1,0), fv = new THREE.Vector3(); fv[L] = F;
     const lat = new THREE.Vector3(); lat[A] = 1;
-    const basis = (x,y,z)=>new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z));
+    // ajustes del usuario: desplazar sobre el plano de la zona, estirar y girar un poco
+    const basis = (x,y,z, pos, size)=>{
+      const P = v.p, r = THREE.MathUtils.degToRad(P.fr||0), c = Math.cos(r), sn = Math.sin(r);
+      pos.addScaledVector(x, (P.ox||0)/100).addScaledVector(y, (P.oy||0)/100);
+      size.x *= (P.sx ?? 100)/100; size.y *= (P.sy ?? 100)/100;
+      const xr = x.clone().multiplyScalar(c).addScaledVector(y, sn), yr = y.clone().multiplyScalar(c).addScaledVector(x, -sn);
+      return new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xr,yr,z));
+    };
     const pos = C.clone(); pos.y -= d;
     const z = WRAP_ZONES[v.zone];
     if(v.zone==='left' || v.zone==='right'){
       // izquierda del conductor = arriba × delante
       const n = new THREE.Vector3().crossVectors(up, fv); if(v.zone==='right') n.negate();
       pos.addScaledVector(n, S[A]/4);
-      return {pos, rot:basis(new THREE.Vector3().crossVectors(up,n), up, n), size:new THREE.Vector3(S[L]*1.04, S.y*1.04, S[A]/2+.02), facing:n, minDot:.25};
+      const size = new THREE.Vector3(S[L]*1.04, S.y*1.04, S[A]/2+.02);
+      return {pos, rot:basis(new THREE.Vector3().crossVectors(up,n), up, n, pos, size), size, facing:n, minDot:.25};
     }
     if(z.span){
       const [a,b] = [v.p.a ?? z.span[0], v.p.b ?? z.span[1]].map(x=>x/100);
       pos.addScaledVector(fv, S[L]*(.5 - (a+b)/2)); pos.y += S.y/4;
       const x = fv.clone().negate();   // en la plantilla el morro suele quedar a la izquierda
-      return {pos, rot:basis(x, new THREE.Vector3().crossVectors(up,x), up), size:new THREE.Vector3(S[L]*Math.max(.02,b-a), S[A]*1.04, S.y/2+.1), facing:up, minDot:.35};
+      const size = new THREE.Vector3(S[L]*Math.max(.02,b-a), S[A]*1.04, S.y/2+.1);
+      return {pos, rot:basis(x, new THREE.Vector3().crossVectors(up,x), up, pos, size), size, facing:up, minDot:.35};
     }
     const n = v.zone==='front' ? fv.clone() : fv.clone().negate();
     pos.addScaledVector(n, S[L]/4);
-    return {pos, rot:basis(new THREE.Vector3().crossVectors(up,n), up, n), size:new THREE.Vector3(S[A]*1.04, S.y*1.04, S[L]/2), facing:n, minDot:.3};
+    const size = new THREE.Vector3(S[A]*1.04, S.y*1.04, S[L]/2);
+    return {pos, rot:basis(new THREE.Vector3().crossVectors(up,n), up, n, pos, size), size, facing:n, minDot:.3};
   }
   if(v.type==='stripes'){
     // de morro a culo por el centro, proyectadas desde arriba
@@ -2738,6 +2750,7 @@ function buildVinylList(){
     btn('Girar 90°', ()=>{ v.rot = ((v.rot||0)+1)%4; buildVinyl(v); });
     btn('Espejo', ()=>{ v.mirror = !v.mirror; buildVinyl(v); });
     btn('Cambiar recorte', ()=>openWrapEd(v.zone));
+    btn('Restablecer ajustes', ()=>{ Object.assign(v.p, vinylDefaults('wrap')); v.rot = 0; v.mirror = false; buildVinyl(v); buildVinylList(); });
   } else if(v.type!=='stripes'){
     btn('Recolocar', ()=>{ vinylPlacing = {move:v}; flash('Toca la carrocería donde quieras moverlo'); });
     btn('Duplicar al otro lado', ()=>{
@@ -2853,7 +2866,7 @@ function openWrapEd(zone){
     if(c[2]-c[0] < .01 || c[3]-c[1] < .01){ drawWrapEd(); return; }
     let v = wrapVinyl(wrapZone);
     if(v){ v.crop = c; buildVinyl(v); }
-    else v = addVinyl({type:'wrap', zone:wrapZone, crop:c, rot:0, mirror:false, p:{}});
+    else v = addVinyl({type:'wrap', zone:wrapZone, crop:c, rot:0, mirror:false, p:vinylDefaults('wrap')});
     // siguiente zona sin marcar
     const next = Object.keys(WRAP_ZONES).find(z=>!wrapVinyl(z)); if(next) wrapZone = next;
     drawWrapEd();
