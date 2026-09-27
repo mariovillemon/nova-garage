@@ -448,6 +448,7 @@ function guessRole(name){
   if(/seal|gasket|weather|strip|rubber|goma|junta/.test(n)) return 'other';
   if(/glass|window|windshield|windscreen|cristal|luna|glas/.test(n)) return 'glass';
   if(/tire|tyre|neumat|reifen/.test(n)) return 'tire';
+  if(/disc|disk|rotor|disco/.test(n)) return 'other';        // el disco conserva su acero original
   if(/caliper|brake|pinza|freno/.test(n)) return 'calipers';
   if(/wheel|rim|llanta|felge/.test(n)) return 'wheels';
   if(/chrome|cromo|trim/.test(n)) return 'chrome';
@@ -820,10 +821,11 @@ function detectCalipers(quiet){
     const R = Math.max(wb.max.y-hub.y, (wb.max[L]-wb.min[L])/2);
     const area = wb.clone().expandByScalar(R*.08);
     const inboard = Math.abs(hub[A]-cx) + (wb.max[A]-wb.min[A])*.3;   // por dentro de la cara de la llanta (ahí van los radios)
-    // también se revisa lo marcado como pinza por color (salvo si su nombre dice que lo es):
-    // si un trozo es un anillo completo, es el disco y vuelve a llanta
+    // también se revisa lo ya marcado como pinza (por nombre o por color): muchas veces
+    // "brake" es pinza + disco en la misma pieza. Los trozos que son un anillo completo
+    // son el disco y pasan a "Sin tocar" para que conserven su aspecto original
     const cands = meshes.filter(m=>!m.userData.addon && m.visible && area.containsBox(box(m)) &&
-      (['wheels','other'].includes(m.userData.role) || (m.userData.role==='calipers' && guessRole(m.userData.label)!=='calipers')));
+      ['wheels','other','calipers'].includes(m.userData.role));
     cands.forEach(m=>{
       const {geo, comp, tris} = meshIslands(m);
       const pos = geo.attributes.position, st = new Map(), P = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
@@ -866,12 +868,13 @@ function detectCalipers(quiet){
         if(!isCal.get(k) && x.span <= 130 && x.rmin > R*.15 && x.rmax < R*.97 && x.ext < R*.6 && calBoxes.some(b=>b.intersectsBox(x.b))) isCal.set(k, true);
       });
       const cal = [...isCal.values()].filter(Boolean).length;
-      const was = m.userData.role, other = was==='calipers' ? 'wheels' : was;
+      const was = m.userData.role, other = was==='calipers' ? 'other' : was;
       if(cal === isCal.size){ if(was!=='calipers'){ m.userData.role = 'calipers'; applyRole(m); found++; } return; }
-      if(!cal){ if(was==='calipers'){ m.userData.role = 'wheels'; applyRole(m); found++; } return; }
+      if(!cal){ if(was==='calipers'){ m.userData.role = 'other'; applyRole(m); found++; } return; }
       const parts = partitionMesh(m, (p,t)=>isCal.get(comp[t]) ? 'pinza' : 'resto');
       if(!parts) return;
       parts.pinza.userData.role = 'calipers'; parts.pinza.name = parts.pinza.userData.label = `${m.userData.label} [pinza]`;
+      if(was==='calipers') parts.resto.name = parts.resto.userData.label = `${m.userData.label} [disco]`;
       parts.resto.userData.role = other;
       meshes.splice(meshes.indexOf(m), 1, parts.resto, parts.pinza);
       Object.values(parts).forEach(applyRole); found++;
