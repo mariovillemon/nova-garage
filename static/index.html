@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nøva Garage · Configurador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#dfe2e6; --panel:#f4f5f7; --ink:#16191d; --mute:#5d6570; --line:#c9ced5;
+  --accent:#e8a800; --accent-ink:#16191d; --stage:#cfd3d9;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --bg:#14171b; --panel:#1c2026; --ink:#e9ecef; --mute:#98a1ab; --line:#2e343c;
+  --accent:#f2b705; --accent-ink:#14171b; --stage:#1a1e23; } }
+:root[data-theme="dark"]{ --bg:#14171b; --panel:#1c2026; --ink:#e9ecef; --mute:#98a1ab; --line:#2e343c;
+  --accent:#f2b705; --accent-ink:#14171b; --stage:#1a1e23; }
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 Barlow,system-ui,sans-serif;display:grid;grid-template-columns:1fr 360px;overflow:hidden}
+#stage{position:relative;min-height:0;background:var(--stage)}
+#stage canvas{display:block;width:100%;height:100%;touch-action:none}
+#brand{position:absolute;left:20px;top:16px;font:700 30px/1 "Barlow Condensed",sans-serif;letter-spacing:.5px;pointer-events:none}
+#brand small{display:block;font:500 14px Barlow,sans-serif;color:var(--mute);margin-top:4px;letter-spacing:0}
+#drop{position:absolute;inset:0;display:none;place-items:center;background:color-mix(in srgb,var(--accent) 22%,transparent);border:3px dashed var(--accent);font:700 28px "Barlow Condensed",sans-serif}
+#drop.on{display:grid}
+#hint{position:absolute;left:20px;bottom:16px;right:20px;color:var(--mute);font-size:13px;pointer-events:none}
+#status{position:absolute;right:16px;top:16px;background:var(--panel);border:1px solid var(--line);padding:6px 10px;border-radius:6px;font-size:13px;display:none}
+aside{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:0 0 24px}
+section{padding:16px 20px;border-bottom:1px solid var(--line)}
+h2{font:700 20px/1.1 "Barlow Condensed",sans-serif;margin:0 0 10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,select,.file{font:inherit;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer}
+button:hover,.file:hover{border-color:var(--ink)}
+button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+button.primary,.file{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sw{width:30px;height:30px;border-radius:50%;padding:0;border:2px solid var(--line);position:relative}
+.sw[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.swname{font-size:13px;color:var(--mute);margin-top:6px;min-height:1.2em}
+input[type=color]{width:38px;height:32px;border:1px solid var(--line);border-radius:6px;background:none;padding:2px;cursor:pointer}
+input[type=range]{width:100%;accent-color:var(--accent)}
+label.sl{display:flex;justify-content:space-between;font-size:13px;color:var(--mute);margin-top:10px}
+.sub{font-size:13px;color:var(--mute);margin:0 0 8px}
+#meshes{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.m{display:flex;gap:6px;align-items:center;padding:4px 6px;border-bottom:1px solid var(--line);font-size:13px}
+.m:last-child{border-bottom:0}
+.m span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.m.sel{background:color-mix(in srgb,var(--accent) 25%,transparent)}
+.m select{padding:2px 4px;font-size:12px}
+.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+
+input[type=search]{flex:1;min-width:0;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.card{padding:0;overflow:hidden;text-align:left;display:flex;flex-direction:column}
+.card img{width:100%;aspect-ratio:16/10;object-fit:cover;display:block;background:var(--line)}
+.card div{padding:6px 8px;font-size:12px;line-height:1.3}
+.card b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card small{color:var(--mute)}
+.card.busy{opacity:.5;pointer-events:none}
+.card img.th{background:#2a2f36;object-fit:contain}
+.chk{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--mute);margin-top:8px}
+h3{font:700 16px "Barlow Condensed",sans-serif;margin:16px 0 0}
+#credit{position:absolute;left:20px;bottom:40px;right:20px;font-size:13px;pointer-events:auto}
+#credit a{color:inherit}
+
+aside{position:relative}
+.carhead{display:flex;gap:12px;align-items:center;justify-content:space-between}
+.carhead h2{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}
+.carhead .sub{margin:2px 0 0}
+details.cat{border-bottom:1px solid var(--line)}
+details.cat summary{cursor:pointer;list-style:none;padding:14px 20px;font:700 19px/1.1 "Barlow Condensed",sans-serif;display:flex;justify-content:space-between;align-items:center}
+details.cat summary::-webkit-details-marker{display:none}
+details.cat summary::after{content:"+";font:500 22px Barlow,sans-serif;color:var(--mute)}
+details.cat[open] summary::after{content:"–"}
+.catbody{padding:0 20px 16px}
+#drawer,#lib{position:absolute;inset:0;background:var(--panel);padding:16px 20px 24px;overflow-y:auto;z-index:5}
+#drawer[hidden],#lib[hidden]{display:none}
+.drawerhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.drawerhead h2{margin:0}
+
+#selbar{position:absolute;left:20px;top:78px;max-width:min(340px,calc(100% - 40px));background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;z-index:3}
+#selbar[hidden]{display:none}
+#selbar b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#selbar small{color:var(--mute);font-size:12px}
+@media (max-width:820px){
+  body{grid-template-columns:1fr;grid-template-rows:48vh 1fr;overflow:auto}
+  aside{border-left:0;border-top:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="brand">Nøva Garage<small>Configurador de modificaciones</small></div>
+  <div id="status"></div>
+  <div id="selbar" hidden>
+    <b id="selCount"></b>
+    <div class="row">
+      <button id="selNear" title="Añade las piezas pequeñas que tocan la selección">+ Piezas pegadas</button>
+      <button id="selMat">+ Mismo material</button>
+      <button id="selWheel" title="Selecciona todas las piezas que caben en el hueco de esta rueda">+ Toda la rueda</button>
+      <button id="selIslands" title="Parte la pieza en los trozos sueltos que la forman">Separar en trozos</button>
+      
+    </div>
+    <div class="row">
+      <select id="selRole" aria-label="Asignar selección a"></select>
+      <button id="selClear">Quitar selección</button>
+    </div>
+    <div class="row" id="saveRow">
+      <select id="saveCat" aria-label="Categoría de la pieza">
+        <option value="bodykit">Carrocería</option><option value="spoiler">Alerón</option>
+        <option value="aero">Aerodinámica</option><option value="exhaust">Escape</option><option value="other">Otros</option>
+      </select>
+      <button id="saveAsPart">Guardar como pieza</button>
+    </div>
+    <small>Ctrl + clic para añadir o quitar piezas</small>
+  </div>
+  <div id="drop">Suelta el .glb aquí</div>
+  <div id="credit"></div>
+  <div id="hint">Arrastra para girar · rueda o pellizco para zoom · toca una pieza para seleccionarla</div>
+</div>
+<aside>
+  <section class="car">
+    <div class="carhead">
+      <div>
+        <h2 id="carName">Coche de prueba</h2>
+        <p class="sub" id="carSub">Elige un coche para empezar</p>
+        <button id="backCar" hidden style="margin-top:6px">Volver a mi coche</button>
+      </div>
+      <div class="row" style="flex-wrap:nowrap">
+        <button id="openLib" aria-expanded="false" aria-controls="lib">Piezas</button>
+        <button class="primary" id="openSearch" aria-expanded="false" aria-controls="drawer">Cambiar coche</button>
+      </div>
+    </div>
+  </section>
+
+  <details class="cat" open data-cat="body">
+    <summary>Pintura</summary>
+    <div class="catbody" id="ed-body"></div>
+  </details>
+
+  <details class="cat" data-cat="wheels">
+    <summary>Llantas</summary>
+    <div class="catbody">
+      <div id="newWheel" hidden>
+        <p class="sub" id="newWheelName"></p>
+        <label class="sl">Diámetro de llanta <b id="rimV">18"</b></label>
+        <input id="rim" type="range" min="15" max="22" value="18">
+        <div class="row" style="margin:10px 0 14px">
+          <button id="flipRim">Girar cara de la llanta</button>
+          <button id="removeRim">Volver a las originales</button>
+        </div>
+      </div>
+      <div id="ed-wheels"></div>
+      <p class="sub" style="margin-top:14px">Si llanta, neumático y pinzas salen del mismo color:</p>
+      <div class="row">
+        <button id="detColors" class="primary">Separar por colores originales</button>
+        <button id="detTires">Separar por forma</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="cat" data-cat="suspension">
+    <summary>Suspensión y stance</summary>
+    <div class="catbody">
+      <label class="sl">Rebaje <b id="lowV">0 mm</b></label>
+      <input id="low" type="range" min="0" max="80" value="0">
+      <label class="sl">Camber negativo <b id="camV">0,0°</b></label>
+      <input id="cam" type="range" min="0" max="10" step="0.5" value="0">
+      <label class="sl">Separadores (por lado) <b id="spV">0 mm</b></label>
+      <input id="sp" type="range" min="0" max="30" value="0">
+    </div>
+  </details>
+
+  <details class="cat" data-cat="calipers">
+    <summary>Frenos</summary>
+    <div class="catbody" id="ed-calipers"></div>
+  </details>
+
+  <details class="cat" data-cat="exterior">
+    <summary>Lunas y cromados</summary>
+    <div class="catbody">
+      <label class="sl">Tintado de lunas <b id="tintV">20 %</b></label>
+      <input id="tint" type="range" min="0" max="95" value="20">
+      <div class="row" style="margin-top:12px">
+        <button id="chromeDel" aria-pressed="false">Chrome delete</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="cat" data-cat="addons">
+    <summary>Piezas añadidas</summary>
+    <div class="catbody">
+      <div id="addonList"><p class="sub">Añade alerones, escapes o aerodinámica desde el botón Piezas.</p></div>
+      <div id="addonTools" hidden>
+        <div class="row" style="margin-top:10px">
+          <button data-mode="translate" aria-pressed="true">Mover</button>
+          <button data-mode="rotate" aria-pressed="false">Girar</button>
+          <button data-mode="scale" aria-pressed="false">Escalar</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button data-paint="original">Original</button>
+          <button data-paint="body">Color carrocería</button>
+          <button data-paint="carbon">Carbono</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="addonMirror">Duplicar en espejo</button>
+          <button id="addonFlip">Girar 180°</button>
+          <button id="addonDel">Quitar</button>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details class="cat" data-cat="parts">
+    <summary>Piezas del modelo</summary>
+    <div class="catbody">
+      <p class="sub">Para quitar algo que va pegado a la carrocería en la misma pieza (alerón de serie, antena…):</p>
+      <div class="row" style="margin-bottom:6px">
+        <button id="cutStart">Recortar zona</button>
+      </div>
+      <div id="cutTools" hidden>
+        <p class="sub">Ajusta la caja roja con Mover y Escalar para que cubra solo lo que quieres quitar.</p>
+        <div class="row" style="margin-bottom:10px">
+          <button data-cmode="translate" aria-pressed="true">Mover</button>
+          <button data-cmode="scale" aria-pressed="false">Escalar</button>
+          <button class="primary" id="cutApply">Recortar</button>
+          <button id="cutCancel">Cancelar</button>
+        </div>
+      </div>
+      <p class="sub">Si la detección automática falla, asigna aquí qué es cada pieza.</p>
+      <div id="meshes"></div>
+    </div>
+  </details>
+
+  <div id="drawer" hidden>
+    <div class="drawerhead">
+      <h2>Elegir coche</h2>
+      <button id="closeSearch" aria-label="Cerrar buscador">Cerrar</button>
+    </div>
+    <div class="row">
+      <input id="q" type="search" placeholder="Ej.: Toyota Celica" aria-label="Buscar modelo">
+      <button class="primary" id="go">Buscar</button>
+    </div>
+    <label class="chk"><input id="onlyCars" type="checkbox" checked> Solo categoría coches y vehículos</label>
+    <label class="chk"><input id="light" type="checkbox"> Solo modelos ligeros (menos de 300.000 caras)</label>
+    <div id="results" class="grid"></div>
+    <button id="more" hidden style="margin-top:10px;width:100%">Cargar más</button>
+    <h3>Ya descargados</h3>
+    <div id="cached" class="grid"></div>
+    <h3>Otros</h3>
+    <div class="row" style="margin-top:8px">
+      <label class="file">Cargar .glb<input id="file" type="file" accept=".glb" hidden></label>
+      <button id="demo">Coche de prueba</button>
+    </div>
+  </div>
+  <div id="lib" class="drawer" hidden>
+    <div class="drawerhead">
+      <h2>Biblioteca de piezas</h2>
+      <button id="closeLib" aria-label="Cerrar biblioteca">Cerrar</button>
+    </div>
+    <div class="tabs" id="libTabs"></div>
+    <div id="packView" hidden>
+      <div class="drawerhead" style="margin-top:6px">
+        <h3 id="packTitle" style="margin:0"></h3>
+        <button id="packBack">Volver</button>
+      </div>
+      <p class="sub" id="packSub"></p>
+      <div id="packGrid" class="grid"></div>
+    </div>
+    <h3 style="margin-top:4px">Mis piezas</h3>
+    <div id="libMine" class="grid"></div>
+    <h3>Buscar en Sketchfab</h3>
+    <p class="sub" id="libHint" style="margin-top:6px"></p>
+    <div class="row" style="margin-top:8px">
+      <input id="lq" type="search" aria-label="Buscar pieza">
+      <button class="primary" id="lgo">Buscar</button>
+    </div>
+    <div id="libResults" class="grid"></div>
+    <button id="lmore" hidden style="margin-top:10px;width:100%">Cargar más</button>
+  </div>
+</aside>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/TransformControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
+<script>
+(() => {
+const ROLES = {body:'Carrocería',wheels:'Llantas',calipers:'Pinzas',glass:'Lunas',chrome:'Cromados',tire:'Neumáticos',lights:'Faros',other:'Sin tocar',hide:'Ocultar'};
+const EDITABLE = ['body','wheels','calipers'];
+
+const PALETTES = {
+  body:[
+    ['Blanco Alpino (BMW)','#f1f1ee'],['Negro Zafiro (BMW)','#0d0f13'],['Nardo Grey (Audi)','#7c7f82'],
+    ['Miami Blue (Porsche)','#1497c9'],['Chalk (Porsche)','#c9c6bd'],['Rojo Flamme (Renault)','#b3121c'],
+    ['Amarillo Speed (Lamborghini)','#f3c300'],['British Racing Green','#11361f'],['Azul Daytona (BMW)','#1f3a8a'],
+    ['Naranja Valencia (Renault RS)','#e0561a'],['Techno Violet (BMW)','#3a2458'],['Plata Glaciar','#bfc4c9'],
+    ['3M 2080 Satin Dark Grey','#3b3e42'],['3M 2080 Matte Military Green','#4a5237'],['Avery SW900 Gloss Pastel Mint','#9fd6c3']
+  ],
+  wheels:[['Plata','#c8ccd0'],['Gunmetal','#3a3d42'],['Negro','#101114'],['Bronce','#7a5a2c'],['Dorado','#b8922e'],['Blanco','#eeeeea']],
+  calipers:[['Rojo','#c1121f'],['Amarillo','#f2b705'],['Azul','#1d4ed8'],['Verde','#15803d'],['Negro','#111'],['Naranja','#ea580c']]
+};
+
+const FINISHES = {
+  'Brillo':     {metalness:0,   roughness:.22,clearcoat:1,  clearcoatRoughness:.03,iridescence:0},
+  'Metalizado': {metalness:.75, roughness:.32,clearcoat:1,  clearcoatRoughness:.05,iridescence:0},
+  'Satinado':   {metalness:.2,  roughness:.45,clearcoat:.35,clearcoatRoughness:.45,iridescence:0},
+  'Mate':       {metalness:.05, roughness:.85,clearcoat:0,  clearcoatRoughness:1,  iridescence:0},
+  'Cromado':    {metalness:1,   roughness:.04,clearcoat:.4, clearcoatRoughness:.02,iridescence:0},
+  'Perlado':    {metalness:.3,  roughness:.28,clearcoat:1,  clearcoatRoughness:.04,iridescence:.6,iridescenceIOR:1.8,iridescenceThicknessRange:[100,420]},
+  'Camaleón':   {metalness:.85, roughness:.22,clearcoat:1,  clearcoatRoughness:.03,iridescence:1, iridescenceIOR:2.2,iridescenceThicknessRange:[250,800]}
+};
+
+const state = {
+  body:{color:'#7c7f82',finish:'Brillo'},
+  wheels:{color:'#3a3d42',finish:'Metalizado'},
+  calipers:{color:'#c1121f',finish:'Brillo'},
+  low:0, camber:0, spacer:0, tint:20, chromeDel:false
+};
+
+// ---------- Escena ----------
+// Los colores hex se interpretan como sRGB (como en CSS o en Photoshop).
+// Sin esto, three.js r147 los toma como lineales y todo sale mucho más claro.
+THREE.ColorManagement.legacyMode = false;
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+// Tone mapping lineal: ACES desatura y desplaza los tonos, mal para ver colores de pintura reales
+renderer.toneMapping = THREE.LinearToneMapping;
+renderer.toneMappingExposure = .85;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(),0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(35,1,.05,200);
+camera.position.set(5.5,2.2,6);
+const controls = new THREE.OrbitControls(camera,renderer.domElement);
+controls.target.set(0,.6,0); controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI*.49; controls.minDistance = 2.5; controls.maxDistance = 16;
+
+const sun = new THREE.DirectionalLight(0xffffff,.55);
+sun.position.set(4,8,5); sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-5,right:5,top:5,bottom:-5,near:1,far:25});
+scene.add(sun);  // el entorno ya ilumina; el sol solo aporta sombra y algo de contraste
+
+const floor = new THREE.Mesh(new THREE.CircleGeometry(9,64), new THREE.MeshStandardMaterial({color:0x888888,roughness:.9}));
+floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
+
+function applyTheme(){
+  const cs = getComputedStyle(document.documentElement);
+  const c = cs.getPropertyValue('--stage').trim();
+  scene.background = new THREE.Color(c);
+  floor.material.color.set(c).offsetHSL(0,0,-.06);
+}
+applyTheme();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);
+
+function resize(){
+  const r = stage.getBoundingClientRect();
+  renderer.setSize(r.width,r.height,false);
+  camera.aspect = r.width/Math.max(r.height,1); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---------- Materiales compartidos por rol ----------
+const mats = {
+  body:new THREE.MeshPhysicalMaterial(),
+  wheels:new THREE.MeshPhysicalMaterial(),
+  calipers:new THREE.MeshPhysicalMaterial(),
+  glass:new THREE.MeshPhysicalMaterial({color:0x0a0c10,metalness:0,roughness:.05,transparent:true,clearcoat:1}),
+  chrome:new THREE.MeshPhysicalMaterial({color:0xffffff,metalness:1,roughness:.05}),
+  tire:new THREE.MeshStandardMaterial({color:0x151515,roughness:.9})
+};
+function setFinish(role){
+  const m = mats[role], s = state[role], f = FINISHES[s.finish];
+  m.color.set(s.color);
+  Object.assign(m,{metalness:f.metalness,roughness:f.roughness,clearcoat:f.clearcoat,clearcoatRoughness:f.clearcoatRoughness,iridescence:f.iridescence||0});
+  if(f.iridescenceIOR) m.iridescenceIOR = f.iridescenceIOR;
+  if(f.iridescenceThicknessRange) m.iridescenceThicknessRange = f.iridescenceThicknessRange;
+  m.needsUpdate = true;
+}
+function setGlass(){ mats.glass.opacity = .25 + state.tint/100*.72; }
+function setChrome(){
+  if(state.chromeDel) Object.assign(mats.chrome,{metalness:0,roughness:.2}), mats.chrome.color.set('#0b0b0d');
+  else Object.assign(mats.chrome,{metalness:1,roughness:.05}), mats.chrome.color.set('#ffffff');
+  mats.chrome.needsUpdate = true;
+}
+EDITABLE.forEach(setFinish); setGlass(); setChrome();
+
+// ---------- Modelo ----------
+let root = null, meshes = [], selected = null, box = null;
+
+function guessRole(name){
+  const n = name.toLowerCase();
+  // Primero lo que se confunde con ruedas: pasos de rueda, gomas de ventanas, etc.
+  if(/arch|well|house|liner|splash|fender|guard|mudflap|aleta|paso/.test(n)) return 'body';
+  if(/seal|gasket|weather|strip|rubber|goma|junta/.test(n)) return 'other';
+  if(/glass|window|windshield|windscreen|cristal|luna|glas/.test(n)) return 'glass';
+  if(/tire|tyre|neumat|reifen/.test(n)) return 'tire';
+  if(/caliper|brake|pinza|freno/.test(n)) return 'calipers';
+  if(/wheel|rim|llanta|felge/.test(n)) return 'wheels';
+  if(/chrome|cromo|trim/.test(n)) return 'chrome';
+  if(/light|lamp|headl|taill|faro/.test(n)) return 'lights';
+  if(/body|paint|carpaint|shell|door|hood|bonnet|bumper|fender|puerta|capo|carroc/.test(n)) return 'body';
+  return 'other';
+}
+// Si la pieza tiene varios materiales (p. ej. llanta + neumático en la misma malla),
+// cada ranura se trata según su nombre: la goma sigue siendo neumático aunque la pieza sea "llanta".
+const SLOT_ROLES = ['tire','glass','lights','chrome'];
+function applyRole(mesh){
+  const r = mesh.userData.role, o = mesh.userData.orig;
+  mesh.visible = r !== 'hide';
+  if(Array.isArray(o)){
+    mesh.material = o.map(mm=>{
+      if(!mats[r]) return mm;
+      const sr = guessRole(mm.name||'');
+      if(sr!==r && SLOT_ROLES.includes(sr)) return mats[sr] || mm;
+      return mats[r];
+    });
+  } else mesh.material = mats[r] || o;
+}
+// Cada pieza guarda su posición original en el mundo. Al rebajar, se calcula
+// dónde debe quedar en el mundo y se convierte a coordenadas de su padre.
+// Así da igual que una rueda cuelgue de la carrocería o al revés.
+const FIXED = ['wheels','tire','calipers'];
+const _T = new THREE.Matrix4(), _inv = new THREE.Matrix4(), _loc = new THREE.Matrix4();
+const _R = new THREE.Matrix4(), _A = new THREE.Matrix4(), _B = new THREE.Matrix4();
+let axes = {len:'x',lat:'z'}, wheelGroups = {};
+
+// Agrupa las piezas de rueda por esquina (delantera/trasera, izquierda/derecha)
+
+// Algunos modelos traen las 4 ruedas (o las 2 de un eje) en una sola malla.
+// Se parte por esquinas según la posición de cada triángulo.
+// Parte una malla en varias según una función que asigna una clave a cada triángulo
+// (coordenadas en el mundo). Conserva las ranuras de material.
+function partitionMesh(m, keyOf){
+  const geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+  const pos = geo.attributes.position, tris = pos.count/3;
+  const triMat = new Int32Array(tris);
+  (geo.groups||[]).forEach(g=>{ for(let t=g.start/3;t<(g.start+g.count)/3 && t<tris;t++) triMat[t]=g.materialIndex||0; });
+  const buckets = {}, v = new THREE.Vector3(), w = new THREE.Vector3();
+  for(let t=0;t<tris;t++){
+    v.set(0,0,0);
+    for(let k=0;k<3;k++) v.add(w.fromBufferAttribute(pos,t*3+k));
+    v.divideScalar(3).applyMatrix4(m.userData.origWorld);
+    (buckets[keyOf(v,t)] ||= []).push(t);
+  }
+  const keys = Object.keys(buckets);
+  if(keys.length < 2) return null;
+  const parts = {};
+  keys.forEach(key=>{
+    const idx = buckets[key].sort((x,y)=>triMat[x]-triMat[y]), g = new THREE.BufferGeometry();
+    for(const [name,attr] of Object.entries(geo.attributes)){
+      const n = attr.itemSize, arr = new attr.array.constructor(idx.length*3*n);
+      idx.forEach((t,i)=>{ for(let k=0;k<3*n;k++) arr[i*3*n+k] = attr.array[t*3*n+k]; });
+      g.setAttribute(name, new THREE.BufferAttribute(arr,n,attr.normalized));
+    }
+    if(Array.isArray(m.userData.orig)){
+      let start=0; while(start<idx.length){
+        const mi=triMat[idx[start]]; let end=start; while(end<idx.length && triMat[idx[end]]===mi) end++;
+        g.addGroup(start*3,(end-start)*3,mi); start=end;
+      }
+    }
+    const part = new THREE.Mesh(g, m.material);
+    part.name = `${m.userData.label} [${key}]`;
+    part.position.copy(m.position); part.quaternion.copy(m.quaternion); part.scale.copy(m.scale);
+    part.castShadow = part.receiveShadow = true;
+    part.userData = {orig:m.userData.orig, origWorld:m.userData.origWorld.clone(), label:part.name, role:m.userData.role};
+    m.parent.add(part); parts[key] = part;
+  });
+  m.parent.remove(m);
+  return parts;
+}
+
+// Algunos modelos traen las 4 ruedas (o las 2 de un eje) en una sola malla.
+function splitMergedWheels(){
+  const b = new THREE.Box3().setFromObject(root), s = b.getSize(new THREE.Vector3());
+  axes = s.x >= s.z ? {len:'x',lat:'z'} : {len:'z',lat:'x'};
+  const eps = Math.min(s.x,s.z)*.08, out = [], bb = new THREE.Box3();
+  meshes.forEach(m=>{
+    if(!FIXED.includes(m.userData.role) || m.isSkinnedMesh || m.userData.addon){ out.push(m); return; }
+    if(!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    bb.copy(m.geometry.boundingBox).applyMatrix4(m.userData.origWorld);
+    const crossLat = bb.min[axes.lat] < -eps && bb.max[axes.lat] > eps;
+    const crossLen = bb.max[axes.len]-bb.min[axes.len] > s[axes.len]*.45;
+    if(!crossLat && !crossLen){ out.push(m); return; }
+    const parts = partitionMesh(m, v=>(crossLen ? (v[axes.len]>0?'D':'T') : '') + (crossLat ? (v[axes.lat]>0?'+':'-') : ''));
+    if(!parts){ out.push(m); return; }
+    Object.values(parts).forEach(p=>{ applyRole(p); out.push(p); });
+    flash(`Ruedas fusionadas separadas: ${m.userData.label}`);
+  });
+  meshes = out;
+}
+
+// Separa el neumático de la llanta cuando vienen en la misma pieza con un solo material:
+// los triángulos más alejados del buje (anillo exterior) pasan a ser neumático.
+function splitTire(m){
+  const g = wheelGroups[m.userData.group];
+  if(!g){ flash('Primero marca la pieza como Llantas'); return null; }
+  const hub = g.hub, L = axes.len;
+  const radius = v => Math.hypot(v.y-hub.y, v[L]-hub[L]);
+  // radio máximo de la pieza
+  const geo = m.geometry, pos = geo.attributes.position, v = new THREE.Vector3(); let rmax = 0;
+  for(let i=0;i<pos.count;i++){ v.fromBufferAttribute(pos,i).applyMatrix4(m.userData.origWorld); rmax = Math.max(rmax, radius(v)); }
+  const parts = partitionMesh(m, c => radius(c) > rmax*.79 ? 'neumático' : 'llanta');
+  if(!parts){ flash('No se ha encontrado un anillo exterior que separar'); return null; }
+  parts['neumático'].userData.role = 'tire';
+  parts['llanta'].userData.role = 'wheels';
+  const i = meshes.indexOf(m);
+  meshes.splice(i,1,parts['llanta'],parts['neumático']);
+  Object.values(parts).forEach(applyRole);
+  return Object.values(parts);
+}
+
+function buildWheelGroups(){
+  const b = new THREE.Box3().setFromObject(root), s = b.getSize(new THREE.Vector3());
+  axes = s.x >= s.z ? {len:'x',lat:'z'} : {len:'z',lat:'x'};
+  wheelGroups = {};
+  const _b = new THREE.Box3(), c = new THREE.Vector3();
+  meshes.forEach(m=>{
+    m.userData.group = null;
+    if(!FIXED.includes(m.userData.role)) return;
+    if(!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    _b.copy(m.geometry.boundingBox).applyMatrix4(m.userData.origWorld).getCenter(c);
+    const key = (c[axes.len]>0?'D':'T') + (c[axes.lat]>0?'+':'-');
+    const g = wheelGroups[key] ||= {sum:new THREE.Vector3(),n:0,side:c[axes.lat]>0?1:-1,hub:new THREE.Vector3()};
+    // el neumático marca mejor el centro del buje
+    const w = m.userData.role==='tire' ? 4 : 1;
+    g.sum.addScaledVector(c,w); g.n += w; m.userData.group = key;
+  });
+  Object.values(wheelGroups).forEach(g=>g.hub.copy(g.sum).divideScalar(g.n));
+}
+
+function applyLow(){
+  queueMicrotask(()=>{ if(selection.size) refreshSel(); });
+  const d = state.low/1000;
+  if(typeof addonRoot!=='undefined') addonRoot.position.y = -d;
+  const cam = THREE.MathUtils.degToRad(state.camber);
+  const sp = state.spacer/1000;
+  meshes.forEach(m=>{               // orden de recorrido: padres antes que hijos
+    const g = wheelGroups[m.userData.group];
+    if(FIXED.includes(m.userData.role) && g){
+      // Camber: giro sobre el eje longitudinal, parte de arriba hacia dentro
+      const ang = (axes.len==='x' ? -1 : 1) * g.side * cam;
+      if(axes.len==='x') _R.makeRotationX(ang); else _R.makeRotationZ(ang);
+      _A.makeTranslation(g.hub.x,g.hub.y,g.hub.z);
+      _B.makeTranslation(-g.hub.x,-g.hub.y,-g.hub.z);
+      const off = new THREE.Vector3(); off[axes.lat] = g.side*sp;
+      _T.makeTranslation(off.x,off.y,off.z).multiply(_A).multiply(_R).multiply(_B).multiply(m.userData.origWorld);
+    } else {
+      const drop = FIXED.includes(m.userData.role) ? 0 : d;
+      _T.makeTranslation(0,-drop,0).multiply(m.userData.origWorld);
+    }
+    m.parent.updateWorldMatrix(true,false);
+    _loc.copy(_inv.copy(m.parent.matrixWorld).invert()).multiply(_T);
+    _loc.decompose(m.position,m.quaternion,m.scale);
+    m.updateMatrixWorld(true);
+  });
+}
+
+function loadObject(obj, name){
+  if(typeof clearAddons==='function') clearAddons();
+  if(root) scene.remove(root);
+  root = new THREE.Group(); root.add(obj); scene.add(root);
+  // Normalizar: 4,4 m de largo, apoyado en el suelo y centrado
+  let b = new THREE.Box3().setFromObject(root), s = b.getSize(new THREE.Vector3());
+  root.scale.setScalar(4.4/Math.max(s.x,s.z,.001));
+  b = new THREE.Box3().setFromObject(root);
+  const c = b.getCenter(new THREE.Vector3());
+  root.position.x -= c.x; root.position.z -= c.z; root.position.y -= b.min.y;
+  root.updateMatrixWorld(true);
+
+  meshes = [];
+  root.traverse(o=>{
+    if(!o.isMesh) return;
+    o.castShadow = o.receiveShadow = true;
+    const label = o.name || (o.material && o.material.name) || 'pieza';
+    o.userData.orig = o.material;
+    o.userData.origWorld = o.matrixWorld.clone();
+    o.userData.label = label;
+    o.userData.role = guessRole(label + ' ' + (Array.isArray(o.material)?'':(o.material?.name||'')));
+    applyRole(o); meshes.push(o);
+  });
+  // Seguro extra: nada cuyo centro esté en la mitad superior del coche puede ser rueda
+  const carH = new THREE.Box3().setFromObject(root).max.y;
+  const _b = new THREE.Box3(), _c = new THREE.Vector3();
+  meshes.forEach(o=>{
+    if(!FIXED.includes(o.userData.role)) return;
+    _b.setFromObject(o).getCenter(_c);
+    const h = _b.max.y - _b.min.y;
+    if(_c.y > carH*.45 || h > carH*.75){ o.userData.role = 'other'; applyRole(o); }
+  });
+  selectMesh(null); splitMergedWheels(); buildWheelGroups(); applyLow(); buildMeshList();
+  flash(`${name}: ${meshes.length} piezas`);
+}
+
+const loader = new THREE.GLTFLoader();
+function loadFile(file){
+  if(!/\.glb$/i.test(file.name)){ flash('Usa un archivo .glb (glTF binario)'); return; }
+  flash('Cargando…');
+  file.arrayBuffer().then(buf=>{
+    loader.parse(buf,'',g=>loadObject(g.scene,file.name),
+      e=>flash('No se pudo leer el modelo. Si está comprimido con Draco, expórtalo sin compresión.'));
+  });
+}
+
+// Coche de prueba con piezas ya nombradas
+function demoCar(){
+  const g = new THREE.Group(), std = new THREE.MeshStandardMaterial();
+  const add = (geo,name,x,y,z,rx=0,rz=0)=>{const m=new THREE.Mesh(geo,std);m.name=name;m.position.set(x,y,z);m.rotation.set(rx,0,rz);g.add(m);return m;};
+  const shape = new THREE.Shape();
+  shape.moveTo(-2.2,.25); shape.lineTo(2.1,.25); shape.quadraticCurveTo(2.25,.3,2.2,.62);
+  shape.lineTo(1.1,.78); shape.lineTo(.45,1.22); shape.lineTo(-.9,1.24); shape.lineTo(-1.8,.9);
+  shape.quadraticCurveTo(-2.25,.85,-2.2,.25);
+  const body = new THREE.ExtrudeGeometry(shape,{depth:1.7,bevelEnabled:true,bevelSize:.08,bevelThickness:.08,bevelSegments:4});
+  body.translate(0,0,-.85); add(body,'body_paint',0,0,0);
+  const gs = new THREE.Shape();
+  gs.moveTo(1.02,.8); gs.lineTo(.42,1.18); gs.lineTo(-.88,1.2); gs.lineTo(-1.7,.9); gs.lineTo(1.02,.8);
+  const glass = new THREE.ExtrudeGeometry(gs,{depth:1.78,bevelEnabled:false}); glass.translate(0,.01,-.89);
+  add(glass,'window_glass',0,0,0);
+  add(new THREE.BoxGeometry(3.2,.04,.02),'chrome_trim',-.3,.72,.95);
+  add(new THREE.BoxGeometry(3.2,.04,.02),'chrome_trim_r',-.3,.72,-.95);
+  [[1.35,.86],[1.35,-.86],[-1.4,.86],[-1.4,-.86]].forEach(([x,z],i)=>{
+    const s = z>0?1:-1;
+    add(new THREE.CylinderGeometry(.34,.34,.24,40),'tire_'+i,x,.34,z,Math.PI/2);
+    add(new THREE.CylinderGeometry(.25,.25,.02,24),'wheel_rim_'+i,x,.34,z+.12*s,Math.PI/2);
+    for(let k=0;k<5;k++){
+      const sp = add(new THREE.BoxGeometry(.05,.44,.03),'wheel_spoke_'+i+'_'+k,x,.34,z+.13*s,0,k*Math.PI/5*2);
+    }
+    add(new THREE.BoxGeometry(.16,.12,.05),'brake_caliper_'+i,x+.12,.44,z+.07*s);
+  });
+  add(new THREE.BoxGeometry(.05,.1,.5),'headlight_l',2.2,.55,.55);
+  add(new THREE.BoxGeometry(.05,.1,.5),'headlight_r',2.2,.55,-.55);
+  std.color.set('#999');
+  loadObject(g,'Coche de prueba');
+}
+
+// ---------- Selección por clic ----------
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let down=null;
+renderer.domElement.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(!down || Math.hypot(e.clientX-down[0],e.clientY-down[1])>5) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ptr.set((e.clientX-r.left)/r.width*2-1, -(e.clientY-r.top)/r.height*2+1);
+  ray.setFromCamera(ptr,camera);
+  const hit = ray.intersectObjects(meshes.filter(m=>m.visible),false)[0];
+  const multi = e.ctrlKey || e.metaKey || e.shiftKey;
+  if(multi){ if(hit) toggleSel(hit.object); return; }
+  selectMesh(hit?hit.object:null);
+  if(hit){
+    const role = hit.object.userData.role;
+    if(EDITABLE.includes(role)) openCat(role);
+    document.querySelector('.m.sel')?.scrollIntoView({block:'nearest'});
+  }
+});
+const selection = new Set();
+const selBox = new THREE.Box3(), selHelper = new THREE.Box3Helper(selBox, 0xf2b705);
+selHelper.visible = false; scene.add(selHelper);
+function refreshSel(){
+  selBox.makeEmpty();
+  selection.forEach(m=>{ if(m.parent) selBox.expandByObject(m); else selection.delete(m); });
+  selHelper.visible = selection.size>0;
+  selected = selection.size===1 ? [...selection][0] : null;
+  document.querySelectorAll('.m').forEach(el=>el.classList.toggle('sel',selection.has(el._mesh)));
+  const bar = $('selbar'); bar.hidden = selection.size===0;
+  if(selection.size){
+    $('selCount').textContent = selection.size===1 ? [...selection][0].userData.label : `${selection.size} piezas seleccionadas`;
+    const roles = new Set([...selection].map(m=>m.userData.role));
+    $('selRole').value = roles.size===1 ? [...roles][0] : '';
+  }
+}
+function selectMesh(m){ selection.clear(); if(m) selection.add(m); refreshSel(); }
+function toggleSel(m){ selection.has(m) ? selection.delete(m) : selection.add(m); refreshSel(); }
+
+// Añade piezas pequeñas que tocan la selección (tornillos, piezas de la pinza…).
+// Ignora piezas mucho más grandes que la selección, como la llanta o la carrocería.
+function growNearby(){
+  if(!selection.size) return;
+  const carLen = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3()).length();
+  const margin = carLen*.004, b = new THREE.Box3(), sz = new THREE.Vector3();
+  let added = 0;
+  for(let round=0; round<6; round++){
+    const area = selBox.clone().expandByScalar(margin);
+    const limit = Math.max(selBox.getSize(sz).x, sz.y, sz.z)*1.6;
+    let n = 0;
+    meshes.forEach(m=>{
+      if(selection.has(m)) return;
+      b.setFromObject(m); b.getSize(sz);
+      if(Math.max(sz.x,sz.y,sz.z) > limit) return;
+      if(b.intersectsBox(area)){ selection.add(m); selBox.union(b); n++; }
+    });
+    added += n; if(!n) break;
+  }
+  refreshSel(); flash(added ? `${added} piezas añadidas` : 'No hay más piezas pegadas');
+}
+
+// Selecciona todo lo que cabe entero en el hueco de la rueda alrededor de la selección
+// (llanta, neumático, disco, pinza, tornillos). La carrocería no cabe, así que queda fuera.
+function growWheel(){
+  if(!selection.size) return;
+  if(!axes) return;
+  const c = selBox.getCenter(new THREE.Vector3());
+  const area = new THREE.Box3(), half = new THREE.Vector3();
+  half.y = .42; half[axes.len] = .42; half[axes.lat] = .32;   // metros (modelo normalizado)
+  area.min.copy(c).sub(half); area.max.copy(c).add(half);
+  area.min.y = Math.min(area.min.y, -.05);
+  const b = new THREE.Box3(); let n = 0;
+  meshes.forEach(m=>{
+    if(selection.has(m)) return;
+    b.setFromObject(m);
+    if(area.containsBox(b)){ selection.add(m); n++; }
+  });
+  refreshSel(); flash(n ? `${n} piezas de la rueda añadidas` : 'No se han encontrado más piezas en esta rueda');
+}
+
+// Detecta neumáticos en todas las ruedas: lo que está en el anillo exterior de cada rueda
+// pasa a neumático; las piezas que mezclan llanta y goma se parten por el radio.
+function autoTires(){
+  buildWheelGroups();
+  const L = axes.len, v = new THREE.Vector3();
+  const groups = {};
+  meshes.forEach(m=>{ if(['wheels','tire'].includes(m.userData.role) && m.userData.group && !m.userData.addon) (groups[m.userData.group] ||= []).push(m); });
+  let changed = 0;
+  Object.values(groups).forEach(list=>{
+    // centro del buje = centro de la caja de toda la rueda (el neumático manda en la forma)
+    const bb = new THREE.Box3(), tmp = new THREE.Box3();
+    list.forEach(m=>{ if(!m.geometry.boundingBox) m.geometry.computeBoundingBox(); bb.union(tmp.copy(m.geometry.boundingBox).applyMatrix4(m.userData.origWorld)); });
+    const hub = bb.getCenter(new THREE.Vector3());
+    const rad = p => Math.hypot(p.y-hub.y, p[L]-hub[L]);
+    const rmax = Math.max(bb.max.y-hub.y, bb.max[L]-hub[L]);
+    const thr = rmax*.79;
+    list.forEach(m=>{
+      if(m.userData.role!=='wheels') return;
+      const pos = m.geometry.attributes.position; let lo=Infinity, hi=0;
+      for(let i=0;i<pos.count;i++){ const r = rad(v.fromBufferAttribute(pos,i).applyMatrix4(m.userData.origWorld)); lo=Math.min(lo,r); hi=Math.max(hi,r); }
+      if(lo >= thr*.97){ m.userData.role='tire'; applyRole(m); changed++; return; }
+      if(hi > thr*1.04 && lo < thr*.9){
+        const parts = partitionMesh(m, c => rad(c) > thr ? 'neumático' : 'llanta');
+        if(!parts || !parts['neumático'] || !parts['llanta']) return;
+        parts['neumático'].userData.role='tire'; parts['llanta'].userData.role='wheels';
+        meshes.splice(meshes.indexOf(m),1,parts['llanta'],parts['neumático']);
+        Object.values(parts).forEach(applyRole); changed++;
+      }
+    });
+  });
+  buildWheelGroups(); applyLow(); buildMeshList(); selectMesh(null);
+  flash(changed ? `Neumáticos detectados en ${changed} piezas` : 'No se han encontrado neumáticos mezclados con las llantas');
+}
+
+// ---------- Clasificación por colores originales ----------
+// Muchos modelos llevan la rueda partida en decenas de piezas, pero su textura original
+// ya dice qué es cada cosa: goma oscura, llanta metálica, pinza de color vivo.
+const texCache = new Map();
+function sampler(mat){
+  if(!mat) return null;
+  const map = mat.map;
+  if(!map || !map.image){
+    const c = (mat.color||new THREE.Color(1,1,1)).clone().convertLinearToSRGB();
+    return ()=>[c.r,c.g,c.b];
+  }
+  let t = texCache.get(map);
+  if(!t){
+    const img = map.image, W = Math.min(512, img.width||512), H = Math.min(512, img.height||512);
+    const cv = document.createElement('canvas'); cv.width=W; cv.height=H;
+    const cx = cv.getContext('2d',{willReadFrequently:true});
+    try{ cx.drawImage(img,0,0,W,H); t = {W,H,d:cx.getImageData(0,0,W,H).data}; }
+    catch(e){ t = null; }
+    texCache.set(map,t);
+  }
+  if(!t) return null;
+  const tint = (mat.color||new THREE.Color(1,1,1)).clone().convertLinearToSRGB();
+  return (u,v)=>{
+    u = ((u%1)+1)%1; v = ((v%1)+1)%1;
+    const x = Math.min(t.W-1, u*t.W|0), y = Math.min(t.H-1, v*t.H|0), i = (y*t.W+x)*4;
+    return [t.d[i]/255*tint.r, t.d[i+1]/255*tint.g, t.d[i+2]/255*tint.b];
+  };
+}
+function classifyColor([r,g,b]){
+  const lum = .2126*r+.7152*g+.0722*b, sat = Math.max(r,g,b)-Math.min(r,g,b);
+  if(sat > .28 && lum > .1) return 'calipers';
+  if(lum < .14) return 'tire';
+  return 'wheels';
+}
+function classifyWheelsByColor(){
+  let changed = 0, parts = 0, noTex = 0;
+  const out = [];
+  meshes.forEach(m=>{
+    if(!FIXED.includes(m.userData.role) || m.userData.addon){ out.push(m); return; }
+    const mats0 = [].concat(m.userData.orig);
+    const samplers = mats0.map(sampler);
+    const geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+    const pos = geo.attributes.position, uv = geo.attributes.uv, tris = pos.count/3;
+    const triMat = new Int32Array(tris);
+    (geo.groups||[]).forEach(g=>{ for(let t=g.start/3;t<(g.start+g.count)/3 && t<tris;t++) triMat[t]=g.materialIndex||0; });
+    const keys = new Array(tris);
+    for(let t=0;t<tris;t++){
+      const sm = samplers[triMat[t]] || samplers[0];
+      if(!sm){ keys[t] = m.userData.role; noTex++; continue; }
+      let c = [0,0,0];
+      for(let k=0;k<3;k++){
+        const col = uv ? sm(uv.getX(t*3+k), uv.getY(t*3+k)) : sm(0,0);
+        c[0]+=col[0]/3; c[1]+=col[1]/3; c[2]+=col[2]/3;
+      }
+      keys[t] = classifyColor(c);
+    }
+    const uniq = [...new Set(keys)];
+    if(uniq.length === 1){
+      if(m.userData.role !== uniq[0]){ m.userData.role = uniq[0]; applyRole(m); changed++; }
+      out.push(m); return;
+    }
+    const res = partitionMesh(m, (v,t)=>keys[t]);
+    if(!res){ out.push(m); return; }
+    Object.entries(res).forEach(([k,p])=>{ p.userData.role = k; p.name = p.userData.label = `${m.userData.label} [${ROLES[k]}]`; applyRole(p); out.push(p); });
+    parts++; changed++;
+  });
+  meshes = out;
+  buildWheelGroups(); applyLow(); buildMeshList(); selectMesh(null);
+  flash(changed ? `Rueda clasificada por colores: ${changed} piezas (${parts} partidas)` : 'No se han encontrado diferencias de color en las ruedas');
+}
+function growSameMaterial(){
+  const names = new Set([...selection].flatMap(m=>[].concat(m.userData.orig).map(x=>x&&x.name).filter(Boolean)));
+  if(!names.size){ flash('Estas piezas no tienen nombre de material'); return; }
+  let n=0;
+  meshes.forEach(m=>{ if(!selection.has(m) && [].concat(m.userData.orig).some(x=>x&&names.has(x.name))){ selection.add(m); n++; } });
+  refreshSel(); flash(n ? `${n} piezas con el mismo material` : 'Ninguna otra pieza comparte material');
+}
+function assignSel(role){
+  if(!role) return;
+  selection.forEach(m=>{ m.userData.role = role; applyRole(m); });
+  const n = meshes.length; splitMergedWheels(); buildWheelGroups(); applyLow();
+  buildMeshList(); refreshSel();
+  flash(`Asignado a ${ROLES[role]}`);
+  if(role==='wheels') classifyWheelsByColor();
+}
+
+// ---------- UI ----------
+const $ = id=>document.getElementById(id);
+function flash(t){ const s=$('status'); s.textContent=t; s.style.display='block'; clearTimeout(flash.t); flash.t=setTimeout(()=>s.style.display='none',3500); }
+
+function buildEditor(r){
+  if(!r){ EDITABLE.forEach(buildEditor); return; }
+  const s = state[r], ed = $('ed-'+r); ed.innerHTML='';
+  const sw = document.createElement('div'); sw.className='row';
+  const nm = document.createElement('div'); nm.className='swname';
+  PALETTES[r].forEach(([name,hex])=>{
+    const b=document.createElement('button'); b.className='sw'; b.style.background=hex; b.title=name;
+    b.setAttribute('aria-label',name); b.setAttribute('aria-pressed',s.color.toLowerCase()===hex.toLowerCase());
+    b.onclick=()=>{s.color=hex;s.name=name;setFinish(r);buildEditor(r);};
+    b.onmouseenter=()=>nm.textContent=name; b.onmouseleave=()=>nm.textContent=s.name||s.color;
+    sw.append(b);
+  });
+  const pick=document.createElement('input'); pick.type='color'; pick.value=s.color; pick.title='Color personalizado';
+  pick.oninput=()=>{s.color=pick.value;s.name='Personalizado '+pick.value;setFinish(r);nm.textContent=s.name;};
+  sw.append(pick); nm.textContent = s.name||s.color;
+  const fin=document.createElement('div'); fin.className='row'; fin.style.marginTop='12px';
+  Object.keys(FINISHES).forEach(f=>{
+    const b=document.createElement('button'); b.textContent=f; b.setAttribute('aria-pressed',s.finish===f);
+    b.onclick=()=>{s.finish=f;setFinish(r);buildEditor(r);}; fin.append(b);
+  });
+  ed.append(sw,nm,fin);
+}
+function openCat(cat){
+  const d = document.querySelector(`details.cat[data-cat="${cat}"]`);
+  if(d){ d.open = true; d.scrollIntoView({block:'nearest',behavior:'smooth'}); }
+}
+function buildMeshList(){
+  const box = $('meshes'); box.innerHTML='';
+  if(!meshes.length){ box.innerHTML='<div class="m">Sin modelo cargado</div>'; return; }
+  meshes.forEach(m=>{
+    if(m.userData.addon) return;
+    const row=document.createElement('div'); row.className='m'; row._mesh=m;
+    const sp=document.createElement('span'); sp.textContent=m.userData.label; sp.title=m.userData.label;
+    sp.onclick=e=>(e.ctrlKey||e.metaKey||e.shiftKey)?toggleSel(m):selectMesh(m);
+    const sel=document.createElement('select');
+    Object.entries(ROLES).forEach(([k,v])=>{const o=new Option(v,k);o.selected=m.userData.role===k;sel.add(o);});
+    sel.onchange=()=>{selectMesh(m);assignSel(sel.value);};
+    row.append(sp,sel); box.append(row);
+  });
+}
+
+$('file').onchange=e=>{if(e.target.files[0]){loadFile(e.target.files[0]);setCredit(null);setCarName(e.target.files[0].name.replace(/\.glb$/i,''),'Archivo local');openDrawer(false);}};
+$('demo').onclick=()=>{currentCar=null;demoCar();setCredit(null);setCarName('Coche de prueba','');openDrawer(false);};
+$('low').oninput=e=>{state.low=+e.target.value;$('lowV').textContent=state.low+' mm';applyLow();};
+$('cam').oninput=e=>{state.camber=+e.target.value;$('camV').textContent=state.camber.toFixed(1).replace('.',',')+'°';applyLow();};
+$('sp').oninput=e=>{state.spacer=+e.target.value;$('spV').textContent=state.spacer+' mm';applyLow();};
+$('tint').oninput=e=>{state.tint=+e.target.value;$('tintV').textContent=state.tint+' %';setGlass();};
+$('chromeDel').onclick=e=>{state.chromeDel=!state.chromeDel;e.target.setAttribute('aria-pressed',state.chromeDel);setChrome();};
+
+['dragenter','dragover'].forEach(t=>stage.addEventListener(t,e=>{e.preventDefault();$('drop').classList.add('on');}));
+['dragleave','drop'].forEach(t=>stage.addEventListener(t,e=>{e.preventDefault();$('drop').classList.remove('on');}));
+stage.addEventListener('drop',e=>{const f=e.dataTransfer.files[0]; if(f) loadFile(f);});
+
+
+// ---------- Sketchfab (vía backend local) ----------
+let nextCursor = null, lastQuery = '';
+function setCredit(m){
+  const c = $('credit'); c.textContent = '';
+  if(!m) return;
+  const a = document.createElement('a'); a.href = m.url; a.target = '_blank'; a.rel = 'noopener';
+  a.textContent = m.name;
+  c.append(a, ` por ${m.author} · ${m.license}`);
+}
+let currentCar = null;
+function loadURL(meta){
+  currentCar = meta;
+  flash('Cargando modelo…');
+  openDrawer(false);
+  loader.load(meta.file, g=>{ loadObject(g.scene, meta.name); setCredit(meta); setCarName(meta.name, `por ${meta.author}`); },
+    e=>{ if(e.lengthComputable) flash(`Cargando… ${Math.round(e.loaded/e.total*100)} %`); },
+    ()=>flash('No se pudo cargar el modelo descargado'));
+}
+function card(m, onClick){
+  const b = document.createElement('button'); b.className = 'card';
+  if(m.thumb){ const i = new Image(); i.src = m.thumb; i.alt = ''; i.loading = 'lazy'; b.append(i); }
+  const d = document.createElement('div');
+  const t = document.createElement('b'); t.textContent = m.name; t.title = m.name;
+  const sm = document.createElement('small');
+  sm.textContent = `${m.author} · ${m.faces ? Math.round(m.faces/1000)+'k caras' : ''}${m.cached?' · descargado':''}`;
+  d.append(t, sm); b.append(d);
+  b.onclick = ()=>onClick(m, b);
+  return b;
+}
+// Descarga un modelo de Sketchfab (o lo coge de caché). extra se guarda en meta.json.
+async function downloadModel(m, extra={}){
+  let r = await fetch(`/api/models/${m.uid}`);
+  if(r.ok) return await r.json();
+  flash('Pidiendo descarga a Sketchfab…');
+  const {token} = await (await fetch('/api/token')).json();
+  r = await fetch(`https://api.sketchfab.com/v3/models/${m.uid}/download`,
+                  {headers:{Authorization:`Token ${token}`}});
+  if(r.status === 401) throw new Error('Token de Sketchfab no válido');
+  if(!r.ok) throw new Error(`Sketchfab respondió ${r.status} al pedir la descarga`);
+  const gltf = (await r.json()).gltf;
+  if(!gltf) throw new Error('Este modelo no tiene versión glTF');
+  const zr = await fetch(gltf.url);
+  const total = +zr.headers.get('content-length') || gltf.size || 0;
+  const reader = zr.body.getReader(); const chunks = []; let got = 0;
+  for(;;){
+    const {done, value} = await reader.read(); if(done) break;
+    chunks.push(value); got += value.length;
+    flash(total ? `Descargando… ${Math.round(got/total*100)} %` : `Descargando… ${(got/1e6).toFixed(1)} MB`);
+  }
+  flash('Guardando en caché…');
+  const meta = {name:m.name, author:m.author, license:m.license, faces:m.faces, thumb:m.thumb, url:m.url, ...extra};
+  r = await fetch(`/api/models/${m.uid}/store?meta=${encodeURIComponent(JSON.stringify(meta))}`,
+                  {method:'POST', body:new Blob(chunks)});
+  const j = await r.json();
+  if(!r.ok) throw new Error(j.detail || 'Error al guardar');
+  return j;
+}
+async function pick(m, el){
+  el.classList.add('busy');
+  try{ const j = await downloadModel(m, {kind:'car'}); loadURL(j); refreshCache(); }
+  catch(e){ flash(e.message); console.error(e); }
+  finally{ el.classList.remove('busy'); }
+}
+function summarizeSF(m){
+  const imgs = ((m.thumbnails||{}).images||[]).slice()
+    .sort((a,b)=>Math.abs((a.width||0)-400)-Math.abs((b.width||0)-400));
+  const lic = m.license;
+  return {
+    uid: m.uid, name: m.name,
+    author: (m.user||{}).displayName || (m.user||{}).username,
+    license: typeof lic==='object' && lic ? (lic.label||lic.slug) : (lic||'?'),
+    faces: m.faceCount, thumb: imgs[0] ? imgs[0].url : null,
+    url: m.viewerUrl || `https://sketchfab.com/3d-models/${m.uid}`
+  };
+}
+async function searchDirect(q, cursor){
+  const p = new URLSearchParams({type:'models', q, downloadable:'true', count:24, sort_by:'-likeCount'});
+  if($('onlyCars').checked) p.set('categories','cars-vehicles');
+  if($('light').checked) p.set('max_face_count',300000);
+  if(cursor) p.set('cursor',cursor);
+  const r = await fetch('https://api.sketchfab.com/v3/search?'+p);
+  if(r.status !== 200) throw new Error('directo '+r.status);
+  const j = await r.json();
+  return {results:(j.results||[]).map(summarizeSF), next:(j.cursors||{}).next};
+}
+async function searchBackend(q, cursor){
+  const p = new URLSearchParams({q, only_cars:$('onlyCars').checked});
+  if($('light').checked) p.set('max_faces',300000);
+  if(cursor) p.set('cursor',cursor);
+  const r = await fetch('/api/search?'+p); const j = await r.json();
+  if(!r.ok) throw new Error(j.detail || 'Error en la búsqueda');
+  return j;
+}
+async function search(more){
+  const q = more ? lastQuery : $('q').value.trim();
+  if(!q) return;
+  lastQuery = q;
+  if(!more){ $('results').innerHTML=''; nextCursor=null; }
+  flash('Buscando…');
+  let j;
+  try{ j = await searchDirect(q, more ? nextCursor : null); }
+  catch(e1){
+    console.warn('Búsqueda directa falló:', e1.message);
+    try{ j = await searchBackend(q, more ? nextCursor : null); }
+    catch(e2){ flash('No se pudo buscar: '+e2.message); return; }
+  }
+  (j.results||[]).forEach(m=>$('results').append(card(m,pick)));
+  nextCursor = j.next; $('more').hidden = !nextCursor;
+  flash((j.results||[]).length ? `${j.results.length} resultados` : 'Sin resultados descargables');
+}
+async function refreshCache(){
+  try{
+    const r = await fetch('/api/cache'); if(!r.ok) return;
+    const list = (await r.json()).filter(m=>m.kind!=='part'); $('cached').innerHTML='';
+    if(!list.length){ $('cached').innerHTML='<small class="sub">Aún no hay coches descargados</small>'; return; }
+    list.forEach(m=>$('cached').append(card(m,(mm)=>loadURL(mm))));
+  }catch(e){}
+}
+$('go').onclick = ()=>search(false);
+$('q').onkeydown = e=>{ if(e.key==='Enter') search(false); };
+$('more').onclick = ()=>search(true);
+refreshCache();
+
+function setCarName(name, sub){ $('carName').textContent = name; $('carName').title = name; $('carSub').textContent = sub||''; }
+function openDrawer(open){
+  const aside = document.querySelector('aside');
+  if(open){ aside.scrollTop = 0; aside.style.overflowY = 'hidden'; if(!$('lib').hidden){ $('lib').hidden = true; $('openLib').setAttribute('aria-expanded',false); } } else aside.style.overflowY = '';
+  $('drawer').hidden = !open; $('openSearch').setAttribute('aria-expanded',open);
+  if(open){ refreshCache(); setTimeout(()=>$('q').focus(),0); } else $('openSearch').focus();
+}
+$('openSearch').onclick = ()=>openDrawer(true);
+$('closeSearch').onclick = ()=>openDrawer(false);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && !$('drawer').hidden) openDrawer(false); });
+
+(function(){
+  const sr = $('selRole');
+  sr.add(new Option('Asignar a…',''));
+  Object.entries(ROLES).forEach(([k,v])=>sr.add(new Option(v,k)));
+  sr.onchange = ()=>assignSel(sr.value);
+  $('selNear').onclick = growNearby;
+  $('selMat').onclick = growSameMaterial;
+  $('selWheel').onclick = growWheel;
+  $('detTires').onclick = autoTires;
+  $('detColors').onclick = classifyWheelsByColor;
+  $('selClear').onclick = ()=>selectMesh(null);
+
+})();
+
+// =====================================================================
+//  Biblioteca de piezas: llantas, alerones, escapes, aerodinámica
+// =====================================================================
+const PART_CATS = {
+  wheels:  {label:'Llantas',      q:'wheel pack'},
+  spoiler: {label:'Alerones',     q:'spoiler pack'},
+  exhaust: {label:'Escapes',      q:'exhaust tip'},
+  aero:    {label:'Aerodinámica', q:'splitter diffuser'},
+  bodykit: {label:'Carrocería',   q:'body kit'},
+  other:   {label:'Otros',        q:''}
+};
+let libCat = 'wheels', libCursor = null, libQuery = '';
+const addonRoot = new THREE.Group(); scene.add(addonRoot);
+const tcontrols = new THREE.TransformControls(camera, renderer.domElement);
+tcontrols.addEventListener('dragging-changed', e=>{ controls.enabled = !e.value; });
+scene.add(tcontrols);
+let activeAddon = null;
+const wheelState = {meta:null, tpl:null, flip:false, rimIn:18, meshes:[], hidden:[]};
+
+const loadGLTF = url => new Promise((res,rej)=>loader.load(url, g=>res(g.scene), undefined, rej));
+
+// ---------- cajón ----------
+function openLib(open){
+  const aside = document.querySelector('aside');
+  if(open){ if(!$('drawer').hidden) openDrawer(false); aside.scrollTop = 0; aside.style.overflowY = 'hidden'; }
+  else aside.style.overflowY = '';
+  $('lib').hidden = !open; $('openLib').setAttribute('aria-expanded',open);
+  if(open){ buildLibTabs(); refreshLib(); }
+}
+const LIB_HINTS = {
+  wheels:'Prueba también: "rims pack", "JDM wheels", "BBS", "TE37".',
+  spoiler:'Prueba también: "GT wing", "ducktail", "rear wing".',
+  exhaust:'Prueba también: "exhaust tip", "muffler", "Akrapovic".',
+  aero:'Prueba también: "front lip", "canards", "rear diffuser".',
+  bodykit:'Aquí salen coches con kit: al elegir uno se abre como coche donante para que saques sus piezas. Busca el modelo + kit, p. ej. "Celica body kit", "widebody", "Rocket Bunny", "Pandem".',
+  other:''
+};
+function buildLibTabs(){
+  $('libTabs').innerHTML='';
+  $('libHint').textContent = LIB_HINTS[libCat]||'';
+  Object.entries(PART_CATS).forEach(([k,c])=>{
+    const b=document.createElement('button'); b.textContent=c.label; b.setAttribute('aria-pressed',k===libCat);
+    b.onclick=()=>{ libCat=k; $('packView').hidden=true; $('lq').value=c.q; $('libResults').innerHTML=''; $('lmore').hidden=true; buildLibTabs(); refreshLib(); };
+    $('libTabs').append(b);
+  });
+  if(!$('lq').value) $('lq').value = PART_CATS[libCat].q;
+}
+async function refreshLib(){
+  try{
+    const list = (await (await fetch('/api/cache')).json()).filter(m=>m.kind==='part' && m.category===libCat);
+    $('libMine').innerHTML='';
+    if(!list.length){ $('libMine').innerHTML=`<small class="sub">Aún no tienes ${PART_CATS[libCat].label.toLowerCase()}. Búscalas abajo.</small>`; return; }
+    list.forEach(m=>$('libMine').append(card(m, mm=>installPart(mm))));
+  }catch(e){}
+}
+async function libSearch(more){
+  const q = more ? libQuery : $('lq').value.trim(); if(!q) return;
+  libQuery = q; if(!more){ $('libResults').innerHTML=''; libCursor=null; }
+  flash('Buscando…');
+  try{
+    const p = new URLSearchParams({type:'models', q, downloadable:'true', count:24, sort_by:'-likeCount'});
+    if(more && libCursor) p.set('cursor', libCursor);
+    const r = await fetch('https://api.sketchfab.com/v3/search?'+p);
+    if(r.status!==200) throw new Error('Sketchfab respondió '+r.status);
+    const j = await r.json();
+    (j.results||[]).map(summarizeSF).forEach(m=>$('libResults').append(card(m, async (mm,el)=>{
+      el.classList.add('busy');
+      try{
+        if(libCat==='bodykit'){ const meta = await downloadModel(mm,{kind:'car'}); openLib(false); enterDonor(meta); return; }
+        const meta = await downloadModel(mm,{kind:'part',category:libCat}); await installPart(meta); refreshLib();
+      }
+      catch(e){ flash(e.message); console.error(e); }
+      finally{ el.classList.remove('busy'); }
+    })));
+    libCursor = (j.cursors||{}).next; $('lmore').hidden = !libCursor;
+    flash((j.results||[]).length ? `${j.results.length} resultados` : 'Sin resultados');
+  }catch(e){ flash(e.message); }
+}
+
+// ---------- packs de llantas ----------
+// Un pack trae muchas llantas en un solo modelo. Se agrupan las piezas que se tocan
+// entre sí y cada grupo con forma de rueda es una llanta distinta.
+const packCache = new Map();
+function splitPack(src, kind='wheels'){
+  // Se trocea por huecos en el espacio, no por piezas: el pack se divide en una rejilla
+  // de celdas y cada zona continua de celdas ocupadas es un objeto. Así funciona aunque
+  // el autor haya unido todas las llantas en una sola malla.
+  src.updateMatrixWorld(true);
+  const ms = []; src.traverse(o=>{ if(o.isMesh && o.visible) ms.push(o); });
+  const all = new THREE.Box3().setFromObject(src), S = all.getSize(new THREE.Vector3());
+  const vs = Math.max(S.x,S.y,S.z)/160;
+  const NX = Math.ceil(S.x/vs)+3, NY = Math.ceil(S.y/vs)+3, NZ = Math.ceil(S.z/vs)+3;
+  const cellIdx = new Map(), cx = [], cy = [], cz = [];
+  const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
+  const per = ms.map(m=>{
+    const g = m.geometry, pos = g.attributes.position, idx = g.index;
+    const tris = (idx ? idx.count : pos.count)/3, cells = new Int32Array(tris);
+    const triMat = new Int32Array(tris);
+    (g.groups||[]).forEach(gr=>{ for(let t=gr.start/3; t<(gr.start+gr.count)/3 && t<tris; t++) triMat[t] = gr.materialIndex||0; });
+    const mark = p=>{
+      const ix = ((p.x-all.min.x)/vs|0)+1, iy = ((p.y-all.min.y)/vs|0)+1, iz = ((p.z-all.min.z)/vs|0)+1;
+      const key = ix + NX*(iy + NY*iz);
+      let c = cellIdx.get(key);
+      if(c===undefined){ c = cx.length; cellIdx.set(key,c); cx.push(ix); cy.push(iy); cz.push(iz); }
+      return c;
+    };
+    const pa = new THREE.Vector3(), pb = new THREE.Vector3(), pc = new THREE.Vector3(), sp = new THREE.Vector3();
+    for(let t=0;t<tris;t++){
+      const i0 = idx ? idx.getX(t*3) : t*3, i1 = idx ? idx.getX(t*3+1) : t*3+1, i2 = idx ? idx.getX(t*3+2) : t*3+2;
+      pa.fromBufferAttribute(pos,i0).applyMatrix4(m.matrixWorld);
+      pb.fromBufferAttribute(pos,i1).applyMatrix4(m.matrixWorld);
+      pc.fromBufferAttribute(pos,i2).applyMatrix4(m.matrixWorld);
+      // se marca toda la superficie del triángulo, no solo su centro: un triángulo grande
+      // cruza varias celdas y es lo que mantiene unida una pieza hecha de triángulos grandes
+      const e = Math.max(pa.distanceTo(pb), pb.distanceTo(pc), pc.distanceTo(pa));
+      const n = Math.min(400, Math.ceil(e/vs*1.5));
+      if(n > 1){
+        for(let i=0;i<=n;i++) for(let j=0;j<=n-i;j++){
+          sp.copy(pa).addScaledVector(vb.subVectors(pb,pa), i/n).addScaledVector(vc.subVectors(pc,pa), j/n);
+          mark(sp);
+        }
+      }
+      va.copy(pa).add(pb).add(pc).divideScalar(3);
+      cells[t] = mark(va);
+    }
+    return {m, cells, triMat, tris};
+  });
+  // zonas conectadas (vecinos en 3x3x3)
+  const comp = new Int32Array(cx.length).fill(-1); let nComp = 0;
+  for(let c0=0;c0<cx.length;c0++){
+    if(comp[c0]>=0) continue;
+    const stack = [c0]; comp[c0] = nComp;
+    while(stack.length){
+      const c = stack.pop();
+      for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++) for(let dz=-1;dz<=1;dz++){
+        const n = cellIdx.get((cx[c]+dx) + NX*((cy[c]+dy) + NY*(cz[c]+dz)));
+        if(n!==undefined && comp[n]<0){ comp[n] = nComp; stack.push(n); }
+      }
+    }
+    nComp++;
+  }
+  if(nComp < 2) return [src];
+  // caja de cada zona
+  const boxes = Array.from({length:nComp},()=>new THREE.Box3());
+  for(let c=0;c<cx.length;c++){
+    const p = new THREE.Vector3(all.min.x+(cx[c]-1)*vs, all.min.y+(cy[c]-1)*vs, all.min.z+(cz[c]-1)*vs);
+    boxes[comp[c]].expandByPoint(p).expandByPoint(p.clone().addScalar(vs));
+  }
+  const sizes = boxes.map(b=>b.getSize(new THREE.Vector3()));
+  const maxD = Math.max(...sizes.map(z=>Math.max(z.x,z.y,z.z)));
+  let wheels = [];
+  sizes.forEach((z,i)=>{
+    const d = [z.x,z.y,z.z].sort((a,b)=>a-b);
+    if(kind==='wheels' ? (d[2] > maxD*.3 && d[1]/d[2] > .7 && d[0]/d[2] < .85) : d[2] > maxD*.25) wheels.push(i);
+  });
+  if(wheels.length < 2) return [src];
+  // si una zona se lleva casi todo el modelo, es una sola pieza con trozos sueltos, no un pack
+  const triCount = new Float64Array(nComp); let totalT = 0;
+  per.forEach(({cells,tris})=>{ for(let t=0;t<tris;t++){ triCount[comp[cells[t]]]++; totalT++; } });
+  if(Math.max(...wheels.map(i=>triCount[i])) > totalT*.6) return [src];
+  const ctr = i=>boxes[i].getCenter(new THREE.Vector3());
+  wheels.sort((a,b)=>{ const ca=ctr(a), cb=ctr(b);
+    return Math.abs(ca.y-cb.y) > maxD*.5 ? cb.y-ca.y : (ca.x-cb.x) || (ca.z-cb.z); });
+  // construir una malla por llanta con sus triángulos
+  return wheels.map(w=>{
+    const grp = new THREE.Group();
+    per.forEach(({m,cells,triMat,tris})=>{
+      const list = [];
+      for(let t=0;t<tris;t++) if(comp[cells[t]]===w) list.push(t);
+      if(!list.length) return;
+      list.sort((x,y)=>triMat[x]-triMat[y]);
+      const g = m.geometry, idx = g.index, ng = new THREE.BufferGeometry();
+      for(const [name,attr] of Object.entries(g.attributes)){
+        const n = attr.itemSize, arr = new attr.array.constructor(list.length*3*n);
+        list.forEach((t,i)=>{ for(let k=0;k<3;k++){ const src = idx ? idx.getX(t*3+k) : t*3+k;
+          for(let e=0;e<n;e++) arr[(i*3+k)*n+e] = attr.array[src*n+e]; } });
+        ng.setAttribute(name, new THREE.BufferAttribute(arr,n,attr.normalized));
+      }
+      if(Array.isArray(m.material)){
+        let st=0; while(st<list.length){ const mi=triMat[list[st]]; let en=st; while(en<list.length && triMat[list[en]]===mi) en++; ng.addGroup(st*3,(en-st)*3,mi); st=en; }
+      }
+      const k = new THREE.Mesh(ng, m.material); k.name = m.name;
+      k.applyMatrix4(m.matrixWorld); grp.add(k);
+    });
+    return grp;
+  });
+}
+
+// miniaturas renderizadas de cada llanta del pack
+let thumbR = null, thumbScene = null;
+function thumbOf(obj, kind='wheels'){
+  if(!thumbR){
+    thumbR = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true});
+    thumbR.setSize(220,220); thumbR.outputEncoding = THREE.sRGBEncoding;
+    thumbScene = new THREE.Scene();
+    thumbScene.environment = new THREE.PMREMGenerator(thumbR).fromScene(new THREE.RoomEnvironment(),0.04).texture;
+    thumbScene.add(new THREE.DirectionalLight(0xffffff,.8));
+  }
+  const o = obj.clone(true); thumbScene.add(o);
+  const b = new THREE.Box3().setFromObject(o), sz = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+  const ax = ['x','y','z'].reduce((a,k)=>sz[k]<sz[a]?k:a,'x');
+  const r = Math.max(sz.x,sz.y,sz.z);
+  const cam = new THREE.PerspectiveCamera(30,1,r*.01,r*20);
+  const dir = new THREE.Vector3(); dir[ax] = 1;
+  if(kind!=='wheels') dir.set(1,.7,1.2);
+  // mirar desde el lado con más geometría (la cara de la llanta)
+  let sum = 0; o.traverse(m=>{ if(m.isMesh){ const bb = new THREE.Box3().setFromObject(m); sum += bb.getCenter(new THREE.Vector3())[ax]-c[ax]; } });
+  if(kind==='wheels'){ if(sum < 0) dir.negate(); dir.add(new THREE.Vector3(.15,.12,.1)); }
+  dir.normalize();
+  cam.position.copy(c).addScaledVector(dir, r*2.1); cam.lookAt(c);
+  if(kind==='wheels' && ax==='y') cam.up.set(0,0,1), cam.lookAt(c);
+  thumbR.render(thumbScene, cam);
+  thumbScene.remove(o);
+  return thumbR.domElement.toDataURL('image/png');
+}
+
+async function openPack(meta, src, cat='wheels'){
+  const list = splitPack(src, cat);
+  if(list.length < 2) return false;
+  $('packView').hidden = false;
+  $('packTitle').textContent = meta.name;
+  const lbl = PART_CATS[cat].label.toLowerCase();
+  $('packSub').textContent = `${list.length} ${cat==='wheels'?'llantas':'piezas'} en este pack. Elige una para montarla.`;
+  const grid = $('packGrid'); grid.innerHTML = '';
+  $('lib').scrollTop = 0;
+  for(let i=0;i<list.length;i++){
+    const b = document.createElement('button'); b.className = 'card';
+    const img = new Image(); img.className = 'th'; img.alt = ''; img.src = thumbOf(list[i], cat);
+    const d = document.createElement('div'); d.innerHTML = `<b>${cat==='wheels'?'Llanta':'Pieza'} ${i+1}</b>`;
+    b.append(img, d);
+    b.onclick = ()=>{
+      const m2 = {...meta, name:`${meta.name} · ${cat==='wheels'?'llanta':'pieza'} ${i+1}`};
+      if(cat==='wheels') mountWheels(list[i].clone(true), m2); else mountAddon(list[i].clone(true), m2, cat);
+      openLib(false);
+    };
+    grid.append(b);
+    if(i%4===3) await new Promise(r=>setTimeout(r));   // no bloquear la interfaz
+  }
+  return true;
+}
+$('packBack').onclick = ()=>{ $('packView').hidden = true; };
+
+async function installPart(meta){
+  const cat = meta.category || libCat;
+  flash('Montando pieza…');
+  try{
+    let src = packCache.get(meta.uid);
+    if(!src){ src = await loadGLTF(meta.file); packCache.set(meta.uid, src); }
+    if(!meta.extracted && await openPack(meta, src, cat)){ flash('Pack abierto: elige una pieza'); return; }
+    if(cat==='wheels') mountWheels(src.clone(true), meta); else mountAddon(src.clone(true), meta, cat);
+    openLib(false);
+  }catch(e){ flash('No se pudo montar: '+e.message); console.error(e); }
+}
+
+// ---------- geometría del coche ----------
+function carBox(){ return new THREE.Box3().setFromObject(root); }
+// +1 si la trasera está en el lado positivo del eje longitudinal
+function rearSign(){
+  const c = new THREE.Vector3(), b = new THREE.Box3();
+  const find = re => meshes.find(m=>m.userData.role==='lights' && re.test(m.userData.label));
+  let m = find(/tail|rear|tras|piloto|stop/i);
+  if(m){ b.setFromObject(m).getCenter(c); return Math.sign(c[axes.len])||1; }
+  m = find(/head|front|faro|delan/i);
+  if(m){ b.setFromObject(m).getCenter(c); return -(Math.sign(c[axes.len])||1); }
+  return -1;
+}
+// altura de la carrocería en un punto (lanzando un rayo desde arriba)
+function bodyHeightAt(p){
+  const B = carBox(), rc = new THREE.Raycaster(new THREE.Vector3(p.x, B.max.y+1, p.z), new THREE.Vector3(0,-1,0));
+  const hit = rc.intersectObjects(meshes.filter(m=>m.visible && !m.userData.addon && m.userData.role!=='glass'), false)[0];
+  return hit ? hit.point.y : B.max.y*.7;
+}
+
+// ---------- llantas ----------
+// Prepara una llanta descargada: detecta su eje, quita el neumático si lo trae
+// y la deja centrada, con radio 1 y la cara mirando a +X.
+function prepareRim(src){
+  src.updateMatrixWorld(true);
+  const all = []; src.traverse(o=>{ if(o.isMesh) all.push(o); });
+  const B = new THREE.Box3().setFromObject(src), S = B.getSize(new THREE.Vector3()), C = B.getCenter(new THREE.Vector3());
+  const ax = ['x','y','z'].reduce((a,k)=>S[k]<S[a]?k:a,'x');
+  const others = ['x','y','z'].filter(k=>k!==ax);
+  const v = new THREE.Vector3();
+  const rad = p => Math.hypot(p[others[0]]-C[others[0]], p[others[1]]-C[others[1]]);
+  const rmax = Math.max(S[others[0]], S[others[1]])/2;
+  // quitar neumático: piezas enteras en el anillo exterior
+  const keep = all.filter(m=>{
+    const pos = m.geometry.attributes.position; let lo = Infinity;
+    for(let i=0;i<pos.count;i+=Math.max(1,pos.count/400|0)){ lo = Math.min(lo, rad(v.fromBufferAttribute(pos,i).applyMatrix4(m.matrixWorld))); }
+    return lo < rmax*.8;
+  });
+  const rim = keep.length ? keep : all;
+  all.forEach(m=>{ if(!rim.includes(m)) m.visible = false; });
+  // radio real de la llanta y lado de la cara (donde hay más geometría)
+  let rr = 0, sum = 0, n = 0;
+  rim.forEach(m=>{
+    const pos = m.geometry.attributes.position;
+    for(let i=0;i<pos.count;i+=Math.max(1,pos.count/800|0)){
+      v.fromBufferAttribute(pos,i).applyMatrix4(m.matrixWorld);
+      rr = Math.max(rr, rad(v)); sum += v[ax]-C[ax]; n++;
+    }
+  });
+  const face = Math.sign(sum/n) || 1;
+  const width = S[ax]/rr;
+  // normalizar
+  const inner = new THREE.Group(); inner.add(src); src.position.sub(C);
+  const norm = new THREE.Group(); norm.add(inner);
+  const axisV = new THREE.Vector3(); axisV[ax] = face;
+  inner.quaternion.setFromUnitVectors(axisV, new THREE.Vector3(1,0,0));
+  norm.scale.setScalar(1/rr);
+  const tpl = new THREE.Group(); tpl.add(norm);
+  tpl.updateMatrixWorld(true);
+  return {tpl, width};
+}
+function tireGeometry(rimR, outerR, width){
+  const w = width/2, pts = [];
+  const sh = Math.min((outerR-rimR)*.45, w*.45);   // redondeo del hombro
+  pts.push(new THREE.Vector2(rimR*.98, -w*.92));
+  pts.push(new THREE.Vector2(outerR-sh, -w));
+  for(let i=0;i<=6;i++){ const a = -Math.PI/2 + i/6*Math.PI/2; pts.push(new THREE.Vector2(outerR-sh+Math.cos(a)*sh, -w+sh+Math.sin(a)*sh)); }
+  for(let i=0;i<=6;i++){ const a = i/6*Math.PI/2; pts.push(new THREE.Vector2(outerR-sh+Math.cos(a)*sh, w-sh+Math.sin(a)*sh)); }
+  pts.push(new THREE.Vector2(outerR-sh, w));
+  pts.push(new THREE.Vector2(rimR*.98, w*.92));
+  const g = new THREE.LatheGeometry(pts, 64);
+  g.rotateZ(-Math.PI/2);   // eje del torno (Y) → X
+  g.computeVertexNormals();
+  return g;
+}
+function removeWheels(keepMeta){
+  wheelState.meshes.forEach(m=>m.parent && m.parent.remove(m));
+  meshes = meshes.filter(m=>!wheelState.meshes.includes(m));
+  wheelState.hidden.forEach(m=>m.visible = true);
+  wheelState.meshes = []; wheelState.hidden = [];
+  if(!keepMeta){ wheelState.meta = null; wheelState.tpl = null; $('newWheel').hidden = true; }
+}
+function mountWheels(src, meta){
+  if(!Object.keys(wheelGroups).length){ flash('Este coche no tiene ruedas detectadas'); return; }
+  wheelState.meta = meta; wheelState.tpl = prepareRim(src); wheelState.flip = false;
+  buildRims();
+  $('newWheel').hidden = false; $('newWheelName').textContent = `${meta.name} · ${meta.author}`;
+  openCat('wheels'); flash('Llantas montadas');
+}
+function buildRims(){
+  removeWheels(true);
+  buildWheelGroups();
+  const L = axes.len, A = axes.lat, tmp = new THREE.Box3();
+  const groups = {};
+  meshes.forEach(m=>{ if(['wheels','tire'].includes(m.userData.role) && m.userData.group) (groups[m.userData.group] ||= []).push(m); });
+  root.updateMatrixWorld(true);
+  const rootInv = root.matrixWorld.clone().invert();
+  Object.entries(groups).forEach(([key,list])=>{
+    const bb = new THREE.Box3();
+    list.forEach(m=>{ if(!m.geometry.boundingBox) m.geometry.computeBoundingBox(); bb.union(tmp.copy(m.geometry.boundingBox).applyMatrix4(m.userData.origWorld)); });
+    const hub = bb.getCenter(new THREE.Vector3());
+    const outerR = Math.max(bb.max.y-hub.y, (bb.max[L]-bb.min[L])/2);
+    const tireW = Math.max(bb.max[A]-bb.min[A], outerR*.45);
+    const side = hub[A] > 0 ? 1 : -1;
+    const rimR = Math.min(wheelState.rimIn*0.0254/2, outerR*.9);
+    const rimW = Math.min(wheelState.tpl.width*rimR, tireW*.95);
+
+    // orientación: +X de la plantilla → hacia fuera del coche
+    const out = new THREE.Vector3(); out[A] = side * (wheelState.flip ? -1 : 1);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1,0,0), out);
+    const face = new THREE.Vector3(); face[A] = side*(tireW/2 - rimW/2);   // cara al ras del lateral
+
+    // llanta
+    const rim = wheelState.tpl.tpl.clone(true);
+    rim.scale.set(rimW/wheelState.tpl.width, rimR, rimR);
+    const holder = new THREE.Group(); holder.add(rim);
+    holder.position.copy(hub).add(face); holder.quaternion.copy(q);
+    // neumático genérico
+    const tire = new THREE.Mesh(tireGeometry(rimR, outerR, tireW), mats.tire);
+    tire.position.copy(hub); tire.quaternion.copy(q);
+    tire.castShadow = true;
+
+    // colgar de root en coordenadas de root
+    [holder, tire].forEach(o=>{ o.applyMatrix4(rootInv); root.add(o); });
+    root.updateMatrixWorld(true);
+    const add = (m, role)=>{
+      m.userData = {...m.userData, addon:'wheel', role, orig:m.material, label:'Llanta nueva', origWorld:m.matrixWorld.clone(), group:key};
+      m.material = role==='tire' ? mats.tire : mats.wheels; m.castShadow = true;
+      meshes.push(m); wheelState.meshes.push(m);
+    };
+    rim.traverse(o=>{ if(o.isMesh && o.visible) add(o,'wheels'); });
+    add(tire,'tire');
+    wheelState.meshes.push(holder);
+    // ocultar llanta y neumático originales
+    list.forEach(m=>{ if(m.visible){ m.visible = false; wheelState.hidden.push(m); } });
+  });
+  buildWheelGroups(); applyLow();
+}
+
+// ---------- alerones, escapes, aerodinámica ----------
+function mountAddon(src, meta, cat){
+  const B = carBox(), S = B.getSize(new THREE.Vector3()), L = axes.len, A = axes.lat, rs = rearSign();
+  if(meta.extracted){
+    const obj = new THREE.Group(); obj.add(src);
+    obj.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; o.userData.origMat = o.material; } });
+    obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[]};
+    addonRoot.add(obj); selectAddon(obj); buildAddonList(); openCat('addons');
+    flash('Pieza colocada en su posición original. Si sale al revés, usa "Girar 180°".');
+    return;
+  }
+  src.updateMatrixWorld(true);
+  const pb = new THREE.Box3().setFromObject(src), ps = pb.getSize(new THREE.Vector3()), pc = pb.getCenter(new THREE.Vector3());
+  const inner = new THREE.Group(); inner.add(src); src.position.sub(pc);
+  // la dimensión horizontal más larga de la pieza va a lo ancho del coche
+  const longH = ps.x >= ps.z ? 'x' : 'z';
+  if(longH !== A) inner.rotation.y = Math.PI/2;
+  const obj = new THREE.Group(); obj.add(inner);
+  const longest = Math.max(ps.x, ps.z);
+  const W = S[A];
+  let width, pos = new THREE.Vector3();
+  const rearEdge = rs>0 ? B.max[L] : B.min[L], frontEdge = rs>0 ? B.min[L] : B.max[L];
+  if(cat==='spoiler'){
+    width = W*.85;
+    pos[L] = rearEdge - rs*S[L]*.07;
+    pos.y = bodyHeightAt(pos) + ps.y*(width/longest)/2;
+  } else if(cat==='exhaust'){
+    width = W*.18;
+    pos[L] = rearEdge - rs*.05; pos.y = S.y*.2; pos[A] = W*.3;
+  } else if(cat==='aero'){
+    width = W*.95;
+    pos[L] = frontEdge + rs*.05; pos.y = S.y*.08;
+  } else if(cat==='bodykit'){
+    // paragolpes, faldones, aletas: se escala al ancho del coche y se deja en el centro para ajustarlo
+    width = W*1.02; pos.y = S.y*.35;
+  } else {
+    width = W*.4; pos.y = B.max.y + .2;
+  }
+  obj.scale.setScalar(width/longest);
+  obj.position.copy(pos);
+  // la pieza mira hacia la trasera (giro 180° si hace falta, con el botón)
+  obj.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; o.userData.origMat = o.material; } });
+  obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[]};
+  // ocultar la pieza de serie equivalente, si se reconoce por su nombre
+  const STOCK = {spoiler:/spoiler|wing|aler[oó]n/i, exhaust:/exhaust|muffler|tailpipe|escape/i, aero:/splitter|lip|diffuser|difusor|canard/i};
+  if(STOCK[cat]){
+    meshes.forEach(m=>{ if(m.visible && !m.userData.addon && STOCK[cat].test(m.userData.label)){ m.visible = false; obj.userData.hid.push(m); } });
+  }
+  // sin nombre claro: buscar por posición un alerón de serie que sea pieza aparte
+  if(cat==='spoiler' && !obj.userData.hid.length){
+    const b = new THREE.Box3(), c = new THREE.Vector3(), z = new THREE.Vector3();
+    meshes.forEach(m=>{
+      if(!m.visible || m.userData.addon || ['glass','lights','wheels','tire','calipers'].includes(m.userData.role)) return;
+      b.setFromObject(m); b.getCenter(c); b.getSize(z);
+      const rearPos = rs*(c[L]-B.getCenter(new THREE.Vector3())[L]) / S[L];   // 0,5 = extremo trasero
+      if(rearPos > .3 && c.y > B.min.y + S.y*.5 && z[A] > S[A]*.45 && z[L] < S[L]*.25 && z.y < S.y*.35){
+        m.visible = false; obj.userData.hid.push(m);
+      }
+    });
+  }
+  addonRoot.add(obj);
+  selectAddon(obj); buildAddonList(); openCat('addons');
+  flash(obj.userData.hid.length
+    ? `${PART_CATS[cat].label} colocada; se ha ocultado la de serie. Ajústala con las flechas.`
+    : cat==='spoiler'
+      ? 'Alerón colocado. Si el de serie va pegado a la carrocería, quítalo con "Recortar zona" en Piezas del modelo.'
+      : `${PART_CATS[cat].label} colocada. Si el coche tiene una de serie, tócala y asígnala a "Ocultar".`);
+}
+const carbonMat = new THREE.MeshPhysicalMaterial({color:0x15171a, metalness:.2, roughness:.35, clearcoat:1, clearcoatRoughness:.05});
+function paintAddon(obj, mode){
+  obj.userData.paint = mode;
+  obj.traverse(o=>{ if(o.isMesh) o.material = mode==='body' ? mats.body : mode==='carbon' ? carbonMat : o.userData.origMat; });
+}
+function selectAddon(obj){
+  if(obj && typeof cutBox!=='undefined' && cutBox.visible) endCut();
+  activeAddon = obj;
+  if(obj) tcontrols.attach(obj); else tcontrols.detach();
+  $('addonTools').hidden = !obj;
+  document.querySelectorAll('#addonList .m').forEach(el=>el.classList.toggle('sel', el._obj===obj));
+}
+function buildAddonList(){
+  const box = $('addonList'); box.innerHTML='';
+  if(!addonRoot.children.length){ box.innerHTML='<p class="sub">Añade alerones, escapes o aerodinámica desde el botón Piezas.</p>'; return; }
+  addonRoot.children.forEach(obj=>{
+    const row = document.createElement('div'); row.className='m'; row._obj = obj;
+    const sp = document.createElement('span'); sp.textContent = `${PART_CATS[obj.userData.category].label}: ${obj.userData.name}`;
+    sp.onclick = ()=>selectAddon(obj);
+    row.append(sp); box.append(row);
+  });
+  selectAddon(activeAddon && activeAddon.parent ? activeAddon : null);
+}
+function clearAddons(){
+  selectAddon(null);
+  [...addonRoot.children].forEach(o=>addonRoot.remove(o));
+  wheelState.meshes = []; wheelState.hidden = []; wheelState.meta = null; wheelState.tpl = null;
+  if($('newWheel')) $('newWheel').hidden = true;
+  buildAddonList();
+}
+
+// ---------- eventos ----------
+$('openLib').onclick = ()=>openLib(true);
+$('closeLib').onclick = ()=>openLib(false);
+$('lgo').onclick = ()=>libSearch(false);
+$('lq').onkeydown = e=>{ if(e.key==='Enter') libSearch(false); };
+$('lmore').onclick = ()=>libSearch(true);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && !$('lib').hidden) openLib(false); });
+$('rim').oninput = e=>{ wheelState.rimIn = +e.target.value; $('rimV').textContent = wheelState.rimIn+'"'; if(wheelState.tpl) buildRims(); };
+$('flipRim').onclick = ()=>{ wheelState.flip = !wheelState.flip; buildRims(); };
+$('removeRim').onclick = ()=>{ removeWheels(false); buildWheelGroups(); applyLow(); flash('Llantas originales'); };
+document.querySelectorAll('#addonTools [data-mode]').forEach(b=>b.onclick=()=>{
+  tcontrols.setMode(b.dataset.mode);
+  document.querySelectorAll('#addonTools [data-mode]').forEach(x=>x.setAttribute('aria-pressed', x===b));
+});
+document.querySelectorAll('#addonTools [data-paint]').forEach(b=>b.onclick=()=>activeAddon && paintAddon(activeAddon, b.dataset.paint));
+$('addonDel').onclick = ()=>{ if(!activeAddon) return; (activeAddon.userData.hid||[]).forEach(m=>m.visible=true); addonRoot.remove(activeAddon); activeAddon = null; buildAddonList(); };
+$('addonFlip').onclick = ()=>{ if(activeAddon) activeAddon.rotation.y += Math.PI; };
+$('addonMirror').onclick = ()=>{
+  if(!activeAddon) return;
+  const c = activeAddon.clone(true); c.userData = {...activeAddon.userData, hid:[]};
+  c.position[axes.lat] *= -1; c.scale[axes.lat] *= -1;
+  c.traverse(o=>{ if(o.isMesh) o.userData.origMat = o.userData.origMat || o.material; });
+  addonRoot.add(c); buildAddonList(); selectAddon(c);
+};
+// clic en una pieza añadida la selecciona para ajustarla
+renderer.domElement.addEventListener('pointerup', e=>{
+  if(tcontrols.dragging || !down || Math.hypot(e.clientX-down[0],e.clientY-down[1])>5) return;
+  if(tcontrols.axis) return;   // se ha tocado una flecha del gizmo
+  const hit = ray.intersectObjects(addonRoot.children, true)[0];
+  if(hit){ let o = hit.object; while(o.parent && o.parent!==addonRoot) o = o.parent; selectAddon(o); openCat('addons'); }
+  else if(activeAddon) selectAddon(null);   // tocar fuera quita las flechas
+});
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape' || !$('lib').hidden || !$('drawer').hidden) return;
+  if(activeAddon) selectAddon(null);
+  else if(cutBox.visible) endCut();
+  else if(selection.size) selectMesh(null);
+});
+
+// ---------- recortar una zona de la carrocería ----------
+const cutBox = new THREE.Mesh(new THREE.BoxGeometry(1,1,1),
+  new THREE.MeshBasicMaterial({color:0xff3b30, transparent:true, opacity:.28, depthWrite:false}));
+cutBox.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1,1,1)), new THREE.LineBasicMaterial({color:0xff3b30})));
+cutBox.visible = false; scene.add(cutBox);
+function startCut(){
+  const B = carBox(), S = B.getSize(new THREE.Vector3()), L = axes.len, A = axes.lat, rs = rearSign();
+  const rearEdge = rs>0 ? B.max[L] : B.min[L];
+  cutBox.position.set(0,0,0);
+  cutBox.position[L] = rearEdge - rs*S[L]*.09;
+  cutBox.position.y = B.min.y + S.y*.74;
+  cutBox.scale.set(1,1,1);
+  cutBox.scale[L] = S[L]*.16; cutBox.scale.y = S.y*.16; cutBox.scale[A] = S[A]*.98;
+  cutBox.visible = true;
+  selectAddon(null); tcontrols.attach(cutBox); tcontrols.setMode('translate');
+  $('cutTools').hidden = false; openCat('parts');
+  document.querySelectorAll('#cutTools [data-cmode]').forEach(x=>x.setAttribute('aria-pressed', x.dataset.cmode==='translate'));
+}
+function endCut(){ cutBox.visible = false; tcontrols.detach(); $('cutTools').hidden = true; }
+function applyCut(){
+  cutBox.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(cutBox);
+  box.translate(new THREE.Vector3(0, state.low/1000, 0));   // las piezas guardan su posición sin rebajar
+  const out = []; let cut = 0;
+  const bb = new THREE.Box3();
+  meshes.forEach(m=>{
+    if(!m.visible || m.userData.addon || FIXED.includes(m.userData.role)){ out.push(m); return; }
+    if(!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    bb.copy(m.geometry.boundingBox).applyMatrix4(m.userData.origWorld);
+    if(!bb.intersectsBox(box)){ out.push(m); return; }
+    if(box.containsBox(bb)){ m.userData.role = 'hide'; applyRole(m); out.push(m); cut++; return; }
+    const parts = partitionMesh(m, v=>box.containsPoint(v) ? 'recorte' : 'resto');
+    if(!parts){ out.push(m); return; }
+    if(parts.recorte){ parts.recorte.userData.role = 'hide'; parts.recorte.name = parts.recorte.userData.label = `${m.userData.label} [recortado]`; }
+    Object.values(parts).forEach(p=>{ applyRole(p); out.push(p); });
+    cut++;
+  });
+  meshes = out;
+  buildWheelGroups(); applyLow(); buildMeshList(); endCut();
+  flash(cut ? `Zona recortada en ${cut} piezas. Para deshacerlo, cambia "[recortado]" de Ocultar a Sin tocar.` : 'No había nada dentro de la caja');
+}
+$('cutStart').onclick = startCut;
+$('cutCancel').onclick = endCut;
+$('cutApply').onclick = applyCut;
+document.querySelectorAll('#cutTools [data-cmode]').forEach(b=>b.onclick=()=>{
+  tcontrols.setMode(b.dataset.cmode);
+  document.querySelectorAll('#cutTools [data-cmode]').forEach(x=>x.setAttribute('aria-pressed', x===b));
+});
+
+// ---------- separar una pieza en sus trozos sueltos ----------
+// Muchas veces el alerón de serie está en la misma malla que la carrocería pero no
+// cosido a ella: es un "islote" de triángulos. Aquí se separa cada islote en su pieza.
+function splitIslands(m){
+  const geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+  const pos = geo.attributes.position, tris = pos.count/3;
+  geo.computeBoundingBox();
+  const q = geo.boundingBox.getSize(new THREE.Vector3()).length()*1e-5 || 1e-6;
+  const weld = new Map(), vid = new Int32Array(pos.count);
+  for(let i=0;i<pos.count;i++){
+    const k = `${Math.round(pos.getX(i)/q)},${Math.round(pos.getY(i)/q)},${Math.round(pos.getZ(i)/q)}`;
+    let id = weld.get(k); if(id===undefined){ id = weld.size; weld.set(k,id); } vid[i] = id;
+  }
+  const par = new Int32Array(weld.size).map((_,i)=>i);
+  const find = i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
+  const uni = (a,b)=>{ a=find(a); b=find(b); if(a!==b) par[a]=b; };
+  for(let t=0;t<tris;t++){ uni(vid[t*3],vid[t*3+1]); uni(vid[t*3],vid[t*3+2]); }
+  const comp = new Int32Array(tris), count = new Map();
+  for(let t=0;t<tris;t++){ const r = find(vid[t*3]); comp[t] = r; count.set(r,(count.get(r)||0)+1); }
+  if(count.size < 2) return null;
+  // los islotes diminutos (tornillos, letras) se quedan con el trozo principal
+  const main = [...count.entries()].sort((a,b)=>b[1]-a[1])[0][0];
+  const minT = Math.max(12, tris*.002);
+  const key = t=>{ const r = comp[t]; return count.get(r) < minT ? 'p'+main : 'p'+r; };
+  const parts = partitionMesh(m, (v,t)=>key(t));
+  if(!parts) return null;
+  let n = 1;
+  Object.entries(parts).forEach(([k,p])=>{
+    p.name = p.userData.label = k==='p'+main ? `${m.userData.label} [principal]` : `${m.userData.label} [trozo ${n++}]`;
+    applyRole(p);
+  });
+  return Object.values(parts);
+}
+$('selIslands').onclick = ()=>{
+  const list = [...selection]; let made = [];
+  list.forEach(m=>{
+    const parts = splitIslands(m);
+    if(parts){ meshes.splice(meshes.indexOf(m),1,...parts); made.push(...parts); }
+  });
+  if(!made.length){ flash('Esta pieza no tiene trozos sueltos: está toda cosida'); return; }
+  buildWheelGroups(); applyLow(); buildMeshList(); selectMesh(null);
+  flash(`Separada en ${made.length} trozos. Toca ahora el que quieras quitar.`);
+};
+
+// =====================================================================
+//  Coche donante: sacar piezas de coches con kit y guardarlas en la biblioteca
+// =====================================================================
+let donorPrev = null;
+function enterDonor(meta){
+  if(!donorPrev || donorPrev === 'none') donorPrev = currentCar || 'none';
+  loadURL(meta);
+  $('backCar').hidden = false;
+  flash('Coche donante: toca las piezas del kit, selecciónalas y pulsa "Guardar como pieza"');
+}
+$('backCar').onclick = ()=>{
+  const prev = donorPrev; donorPrev = null; $('backCar').hidden = true;
+  if(prev && prev!=='none') loadURL(prev); else { demoCar(); setCarName('Coche de prueba',''); }
+};
+
+async function saveSelectionAsPart(){
+  if(!selection.size){ flash('Selecciona primero las piezas'); return; }
+  const cat = $('saveCat').value;
+  const name = prompt('Nombre de la pieza', `${currentCar ? currentCar.name : 'Pieza'} · ${PART_CATS[cat].label.toLowerCase()}`);
+  if(name===null) return;
+  flash('Exportando pieza…');
+  // se exporta en la posición original del coche (sin rebaje): así, montada en el mismo
+  // modelo de coche, cae exactamente en su sitio
+  const grp = new THREE.Group();
+  selection.forEach(m=>{
+    const k = new THREE.Mesh(m.geometry, m.userData.orig || m.material);
+    k.name = m.userData.label;
+    k.applyMatrix4(m.userData.origWorld);
+    grp.add(k);
+  });
+  const exporter = new THREE.GLTFExporter();
+  try{
+    const glb = await new Promise((res,rej)=>exporter.parse(grp, res, rej, {binary:true, maxTextureSize:2048}));
+    const meta = {
+      name, category:cat, extracted:true,
+      author: currentCar ? currentCar.author : 'Desconocido',
+      license: currentCar ? currentCar.license : '?',
+      url: currentCar ? currentCar.url : '',
+      fromCar: currentCar ? currentCar.name : ''
+    };
+    const thumbPng = await (await fetch(thumbOf(grp, cat))).blob();
+    const r = await fetch(`/api/parts/store?meta=${encodeURIComponent(JSON.stringify(meta))}`, {method:'POST', body:new Blob([glb])});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.detail || 'Error al guardar');
+    await fetch(`/api/parts/${j.uid}/thumb`, {method:'POST', body:thumbPng});
+    flash(`Guardada en la biblioteca: ${name}`);
+  }catch(e){ flash('No se pudo guardar: '+(e.message||e)); console.error(e); }
+}
+$('saveAsPart').onclick = saveSelectionAsPart;
+
+buildEditor(); demoCar(); resize();
+(function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();
+})();
+</script>
+</body>
+</html>
