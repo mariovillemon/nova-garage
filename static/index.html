@@ -851,8 +851,18 @@ function detectCalipers(quiet){
         for(let i=0;i<72;i++){ if(s.bins[i%36]) run = 0; else gap = Math.max(gap, ++run); }
         const span = (36-Math.min(gap,36))*10;
         const sz = s.b.getSize(w), ext = Math.max(sz[L], sz.y);
-        isCal.set(k, s.n >= 12 && span >= 20 && span <= 130 && s.rmin > R*.35 && s.rmax < R*.97 &&
-                     ext > R*.25 && ext < R*1.15 && s.lat/s.n <= inboard);
+        s.span = span; s.ext = ext;
+        const why = s.n < 12 ? 'pocos triángulos' : span < 20 ? 'arco pequeño' : span > 130 ? 'anillo' :
+          s.rmin <= R*.2 ? 'llega al buje' : s.rmax >= R*.97 ? 'llega al neumático' :
+          ext <= R*.25 ? 'pequeño' : ext >= R*1.15 ? 'grande' : s.lat/s.n > inboard ? 'en la cara' : '';
+        isCal.set(k, !why);
+        if(!quiet && why) console.log(`${m.userData.label} trozo ${k}: ${why}`, {arco:span, rmin:+(s.rmin/R).toFixed(2), rmax:+(s.rmax/R).toFixed(2), tam:+(ext/R).toFixed(2), n:s.n});
+      });
+      // las pinzas detalladas van en muchos trozos (cuerpo, pistones, tornillos): los trozos
+      // que no son anillos ni llegan al buje y tocan una pinza ya reconocida también son pinza
+      const calBoxes = [...st].filter(([k])=>isCal.get(k)).map(([,x])=>x.b.clone().expandByScalar(R*.03));
+      if(calBoxes.length) st.forEach((x,k)=>{
+        if(!isCal.get(k) && x.span <= 130 && x.rmin > R*.15 && x.rmax < R*.97 && x.ext < R*.6 && calBoxes.some(b=>b.intersectsBox(x.b))) isCal.set(k, true);
       });
       const cal = [...isCal.values()].filter(Boolean).length;
       const was = m.userData.role, other = was==='calipers' ? 'wheels' : was;
