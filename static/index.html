@@ -679,7 +679,7 @@ function demoCar(){
     for(let k=0;k<5;k++){
       const sp = add(new THREE.BoxGeometry(.05,.44,.03),'wheel_spoke_'+i+'_'+k,x,.34,z+.13*s,0,k*Math.PI/5*2);
     }
-    add(new THREE.BoxGeometry(.16,.12,.05),'brake_caliper_'+i,x+.12,.44,z+.07*s);
+    add(new THREE.BoxGeometry(.12,.09,.05),'brake_caliper_'+i,x+.17,.48,z+.07*s);
   });
   add(new THREE.BoxGeometry(.05,.1,.5),'headlight_l',2.2,.55,.55);
   add(new THREE.BoxGeometry(.05,.1,.5),'headlight_r',2.2,.55,-.55);
@@ -820,17 +820,29 @@ function detectCalipers(quiet){
     const R = Math.max(wb.max.y-hub.y, (wb.max[L]-wb.min[L])/2);
     const area = wb.clone().expandByScalar(R*.08);
     const inboard = Math.abs(hub[A]-cx) + (wb.max[A]-wb.min[A])*.3;   // por dentro de la cara de la llanta (ahí van los radios)
-    const cands = meshes.filter(m=>!m.userData.addon && m.visible && ['wheels','other'].includes(m.userData.role) && area.containsBox(box(m)));
+    // también se revisa lo marcado como pinza por color (salvo si su nombre dice que lo es):
+    // si un trozo es un anillo completo, es el disco y vuelve a llanta
+    const cands = meshes.filter(m=>!m.userData.addon && m.visible && area.containsBox(box(m)) &&
+      (['wheels','other'].includes(m.userData.role) || (m.userData.role==='calipers' && guessRole(m.userData.label)!=='calipers')));
     cands.forEach(m=>{
       const {geo, comp, tris} = meshIslands(m);
-      const pos = geo.attributes.position, st = new Map();
+      const pos = geo.attributes.position, st = new Map(), P = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+      // puntos de cada triángulo: vértices, mitades de aristas y centro. Así un triángulo
+      // grande (discos con pocos segmentos) marca todo el arco que cubre, no solo su centro
+      const BARY = [[1,0,0],[0,1,0],[0,0,1],[.5,.5,0],[0,.5,.5],[.5,0,.5],[1/3,1/3,1/3]];
       for(let t=0;t<tris;t++){
-        v.set(0,0,0); for(let k=0;k<3;k++) v.add(w.fromBufferAttribute(pos,t*3+k)); v.divideScalar(3).applyMatrix4(m.userData.origWorld);
+        for(let k=0;k<3;k++) P[k].fromBufferAttribute(pos,t*3+k).applyMatrix4(m.userData.origWorld);
         let s = st.get(comp[t]);
         if(!s) st.set(comp[t], s = {n:0, rmin:Infinity, rmax:0, lat:0, bins:new Uint8Array(36), b:new THREE.Box3()});
-        const dl = v[L]-hub[L], dy = v.y-hub.y, r = Math.hypot(dl,dy);
-        s.n++; s.rmin = Math.min(s.rmin,r); s.rmax = Math.max(s.rmax,r); s.lat += Math.abs(v[A]-cx);
-        s.bins[Math.floor((Math.atan2(dy,dl)+Math.PI)/(2*Math.PI)*36)%36] = 1; s.b.expandByPoint(v);
+        s.n++;
+        for(const [a,b2,c] of BARY){
+          v.set(0,0,0).addScaledVector(P[0],a).addScaledVector(P[1],b2).addScaledVector(P[2],c);
+          const dl = v[L]-hub[L], dy = v.y-hub.y, r = Math.hypot(dl,dy);
+          s.rmin = Math.min(s.rmin,r); s.rmax = Math.max(s.rmax,r);
+          if(r > R*.05) s.bins[Math.floor((Math.atan2(dy,dl)+Math.PI)/(2*Math.PI)*36)%36] = 1;
+          s.b.expandByPoint(v);
+        }
+        s.lat += Math.abs(P[0][A]-cx);
       }
       const isCal = new Map();
       st.forEach((s,k)=>{
@@ -839,15 +851,17 @@ function detectCalipers(quiet){
         for(let i=0;i<72;i++){ if(s.bins[i%36]) run = 0; else gap = Math.max(gap, ++run); }
         const span = (36-Math.min(gap,36))*10;
         const sz = s.b.getSize(w), ext = Math.max(sz[L], sz.y);
-        isCal.set(k, s.n >= 12 && span >= 20 && span <= 130 && s.rmin > R*.2 && s.rmax < R*.97 &&
+        isCal.set(k, s.n >= 12 && span >= 20 && span <= 130 && s.rmin > R*.35 && s.rmax < R*.97 &&
                      ext > R*.25 && ext < R*1.15 && s.lat/s.n <= inboard);
       });
       const cal = [...isCal.values()].filter(Boolean).length;
-      if(!cal) return;
-      if(cal === isCal.size){ m.userData.role = 'calipers'; applyRole(m); found++; return; }
+      const was = m.userData.role, other = was==='calipers' ? 'wheels' : was;
+      if(cal === isCal.size){ if(was!=='calipers'){ m.userData.role = 'calipers'; applyRole(m); found++; } return; }
+      if(!cal){ if(was==='calipers'){ m.userData.role = 'wheels'; applyRole(m); found++; } return; }
       const parts = partitionMesh(m, (p,t)=>isCal.get(comp[t]) ? 'pinza' : 'resto');
       if(!parts) return;
       parts.pinza.userData.role = 'calipers'; parts.pinza.name = parts.pinza.userData.label = `${m.userData.label} [pinza]`;
+      parts.resto.userData.role = other;
       meshes.splice(meshes.indexOf(m), 1, parts.resto, parts.pinza);
       Object.values(parts).forEach(applyRole); found++;
     });
@@ -1417,7 +1431,29 @@ function rearSign(){
   if(m){ b.setFromObject(m).getCenter(c); return Math.sign(c[axes.len])||1; }
   m = find(/head|front|faro|delan/i);
   if(m){ b.setFromObject(m).getCenter(c); return -(Math.sign(c[axes.len])||1); }
-  return -1;
+  return roofRearSign();
+}
+// Sin faros con nombre: en casi todos los coches el habitáculo está desplazado hacia
+// atrás (el capó es más largo que el maletero), así que el techo queda más cerca de la
+// trasera. Se mide el perfil de alturas por el centro del coche y se mira hacia dónde
+// cae el tramo alto.
+let _roofSign = null;
+function roofRearSign(){
+  if(_roofSign && _roofSign.root===root) return _roofSign.s;
+  let s = -1;
+  try{
+    const f0 = {bb:new THREE.Box3(), L:axes.len, A:axes.lat}, tb = new THREE.Box3();
+    genTargets().forEach(m=>{ if(!m.geometry.boundingBox) m.geometry.computeBoundingBox(); f0.bb.union(tb.copy(m.geometry.boundingBox).applyMatrix4(m.userData.origWorld)); });
+    const {bb,L,A} = f0, S = bb.getSize(new THREE.Vector3()), C = bb.getCenter(new THREE.Vector3());
+    const region = bb.clone(); region.min[A] = C[A]-S[A]*.15; region.max[A] = C[A]+S[A]*.15;
+    const g = rayGrid(region, 'y'), p = new THREE.Vector3(), hs = [];
+    for(let i=0;i<=80;i++){ p[L] = bb.min[L] + S[L]*i/80; p[A] = C[A]; p.y = bb.max.y+1; hs.push([p[L], g.cast(p,-1)]); }
+    const top = Math.max(...hs.map(h=>h[1] ?? -Infinity));
+    const hi = hs.filter(h=>h[1]!==null && h[1] > top - S.y*.08);
+    if(hi.length){ const mid = hi.reduce((t,h)=>t+h[0],0)/hi.length; if(Math.abs(mid-C[L]) > S[L]*.01) s = Math.sign(mid-C[L]); }
+  }catch(e){ console.warn(e); }
+  _roofSign = {root, s};
+  return s;
 }
 // altura de la carrocería en un punto (lanzando un rayo desde arriba)
 function bodyHeightAt(p){
@@ -1660,9 +1696,13 @@ function findDeck(f){
   }
   for(let i=0;i<hs.length-5;i++){
     if(hs[i]===null || hs[i+5]===null || hs[i] < bb.min.y + S.y*.45) continue;
-    if(Math.abs(hs[i+5]-hs[i])/(5*step) < .35) return {l: edge - rs*i*step, y: hs[i]};
+    if(Math.abs(hs[i+5]-hs[i])/(5*step) < .45) return {l: edge - rs*i*step, y: hs[i]};
   }
-  return null;
+  // respaldo: primer punto desde atrás que llega al 85 % de la altura de esa zona
+  const valid = hs.filter(h=>h!==null); if(!valid.length) return null;
+  const hmax = Math.max(...valid.slice(0, Math.ceil(valid.length*.7)));
+  const i = hs.findIndex(h=>h!==null && h >= bb.min.y + (hmax-bb.min.y)*.85);
+  return i >= 0 ? {l: edge - rs*i*step, y: hs[i]} : null;
 }
 // Ancho de la carrocería a una altura y posición longitudinal dadas
 function bodyWidthAt(f, l, y){
