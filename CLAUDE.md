@@ -67,6 +67,14 @@ uvicorn main:app --reload   # http://localhost:8000
   identificando las piezas por su índice en `baseMeshes()`. Al cargar un build se repiten las
   operaciones en orden (`replaying = true`), luego estado, llantas y piezas con su transformación.
   Las piezas de un pack guardan `packIndex`.
+- Colocación automática de piezas de biblioteca (`mountAddon`): `orientPart` gira la pieza por
+  su forma (ancho a lo ancho; alerón: lo ancho arriba y el ala subiendo hacia atrás; escape: tubo
+  a lo largo y boca gorda atrás) y `placePart` la mide contra el coche: alerón en el borde del
+  maletero (`findDeck`) al ancho de la carrocería y apoyado por sus patas (`seatOnBody`); escape y
+  aero bajo el paragolpes (`sampleBumper`). Si no se puede medir, vuelve a la colocación por caja.
+- Pinzas por forma (`detectCalipers`, se ejecuta al cargar): dentro de cada rueda, un trozo suelto
+  (`meshIslands`) que ocupa ≤130° de arco, no llega al buje ni al neumático y va por dentro de la
+  cara de la llanta es pinza; si viene fusionada con disco/llanta se parte.
 - `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
 
 ## Pendiente (por prioridad)

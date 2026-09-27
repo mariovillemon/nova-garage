@@ -166,6 +166,7 @@ details.cat[open] summary::after{content:"–"}
       <div class="row">
         <button id="detColors" class="primary">Separar por colores originales</button>
         <button id="detTires">Separar por forma</button>
+        <button id="detCalipers" title="Busca las pinzas por su forma y posición dentro de cada rueda">Detectar pinzas</button>
       </div>
     </div>
   </details>
@@ -641,7 +642,7 @@ function loadObject(obj, name){
     const h = _b.max.y - _b.min.y;
     if(_c.y > carH*.45 || h > carH*.75){ o.userData.role = 'other'; applyRole(o); }
   });
-  selectMesh(null); splitMergedWheels(); buildWheelGroups(); applyLow(); buildMeshList();
+  selectMesh(null); splitMergedWheels(); buildWheelGroups(); detectCalipers(true); applyLow(); buildMeshList();
   flash(`${name}: ${meshes.length} piezas`);
 }
 
@@ -798,6 +799,64 @@ function autoTires(){
   flash(changed ? `Neumáticos detectados en ${changed} piezas` : 'No se han encontrado neumáticos mezclados con las llantas');
 }
 
+// ---------- Pinzas de freno por forma ----------
+// Dentro del hueco de cada rueda, la pinza es un trozo que no rodea el buje: está
+// descentrada, ocupa solo un arco (menos de ~130°), no llega al centro (al revés que un
+// radio) y queda por dentro de la cara de la llanta. Disco, llanta y neumático son
+// anillos completos o pasan por el centro. Se analiza cada trozo suelto de cada pieza,
+// así también funciona si la pinza viene en la misma malla que el disco o la llanta.
+function detectCalipers(quiet){
+  buildWheelGroups();
+  if(!Object.keys(wheelGroups).length){ if(!quiet) flash('No hay ruedas detectadas'); return 0; }
+  const L = axes.len, A = axes.lat, cx = new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3())[A];
+  const tb = new THREE.Box3(), v = new THREE.Vector3(), w = new THREE.Vector3();
+  let found = 0;
+  const box = m=>{ if(!m.geometry.boundingBox) m.geometry.computeBoundingBox(); return tb.copy(m.geometry.boundingBox).applyMatrix4(m.userData.origWorld); };
+  Object.keys(wheelGroups).forEach(key=>{
+    const wb = new THREE.Box3();
+    meshes.forEach(m=>{ if(m.userData.group===key && !m.userData.addon && ['wheels','tire','calipers'].includes(m.userData.role)) wb.union(box(m)); });
+    if(wb.isEmpty()) return;
+    const hub = wb.getCenter(new THREE.Vector3());
+    const R = Math.max(wb.max.y-hub.y, (wb.max[L]-wb.min[L])/2);
+    const area = wb.clone().expandByScalar(R*.08);
+    const inboard = Math.abs(hub[A]-cx) + (wb.max[A]-wb.min[A])*.3;   // por dentro de la cara de la llanta (ahí van los radios)
+    const cands = meshes.filter(m=>!m.userData.addon && m.visible && ['wheels','other'].includes(m.userData.role) && area.containsBox(box(m)));
+    cands.forEach(m=>{
+      const {geo, comp, tris} = meshIslands(m);
+      const pos = geo.attributes.position, st = new Map();
+      for(let t=0;t<tris;t++){
+        v.set(0,0,0); for(let k=0;k<3;k++) v.add(w.fromBufferAttribute(pos,t*3+k)); v.divideScalar(3).applyMatrix4(m.userData.origWorld);
+        let s = st.get(comp[t]);
+        if(!s) st.set(comp[t], s = {n:0, rmin:Infinity, rmax:0, lat:0, bins:new Uint8Array(36), b:new THREE.Box3()});
+        const dl = v[L]-hub[L], dy = v.y-hub.y, r = Math.hypot(dl,dy);
+        s.n++; s.rmin = Math.min(s.rmin,r); s.rmax = Math.max(s.rmax,r); s.lat += Math.abs(v[A]-cx);
+        s.bins[Math.floor((Math.atan2(dy,dl)+Math.PI)/(2*Math.PI)*36)%36] = 1; s.b.expandByPoint(v);
+      }
+      const isCal = new Map();
+      st.forEach((s,k)=>{
+        // arco ocupado = 360° menos el mayor hueco sin triángulos
+        let gap = 0, run = 0;
+        for(let i=0;i<72;i++){ if(s.bins[i%36]) run = 0; else gap = Math.max(gap, ++run); }
+        const span = (36-Math.min(gap,36))*10;
+        const sz = s.b.getSize(w), ext = Math.max(sz[L], sz.y);
+        isCal.set(k, s.n >= 12 && span >= 20 && span <= 130 && s.rmin > R*.2 && s.rmax < R*.97 &&
+                     ext > R*.25 && ext < R*1.15 && s.lat/s.n <= inboard);
+      });
+      const cal = [...isCal.values()].filter(Boolean).length;
+      if(!cal) return;
+      if(cal === isCal.size){ m.userData.role = 'calipers'; applyRole(m); found++; return; }
+      const parts = partitionMesh(m, (p,t)=>isCal.get(comp[t]) ? 'pinza' : 'resto');
+      if(!parts) return;
+      parts.pinza.userData.role = 'calipers'; parts.pinza.name = parts.pinza.userData.label = `${m.userData.label} [pinza]`;
+      meshes.splice(meshes.indexOf(m), 1, parts.resto, parts.pinza);
+      Object.values(parts).forEach(applyRole); found++;
+    });
+  });
+  buildWheelGroups();
+  if(!quiet) flash(found ? `Pinzas detectadas en ${found} piezas` : 'No se han encontrado pinzas por su forma');
+  return found;
+}
+
 // ---------- Clasificación por colores originales ----------
 // Muchos modelos llevan la rueda partida en decenas de piezas, pero su textura original
 // ya dice qué es cada cosa: goma oscura, llanta metálica, pinza de color vivo.
@@ -882,7 +941,7 @@ function assignSel(role){
   const n = meshes.length; splitMergedWheels(); buildWheelGroups(); applyLow();
   buildMeshList(); refreshSel();
   flash(`Asignado a ${ROLES[role]}`);
-  if(role==='wheels') classifyWheelsByColor();
+  if(role==='wheels'){ classifyWheelsByColor(); detectCalipers(true); applyLow(); buildMeshList(); }
 }
 
 // ---------- UI ----------
@@ -1089,6 +1148,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape' && !$('drawer').hid
   $('selWheel').onclick = growWheel;
   $('detTires').onclick = ()=>{ record({op:'tires'}); autoTires(); };
   $('detColors').onclick = ()=>{ record({op:'colors'}); classifyWheelsByColor(); };
+  $('detCalipers').onclick = ()=>{ record({op:'calipers'}); detectCalipers(false); applyLow(); buildMeshList(); selectMesh(null); };
   $('selClear').onclick = ()=>selectMesh(null);
 
 })();
@@ -1497,35 +1557,24 @@ function mountAddon(src, meta, cat){
     return obj;
   }
   src.updateMatrixWorld(true);
-  const pb = new THREE.Box3().setFromObject(src), ps = pb.getSize(new THREE.Vector3()), pc = pb.getCenter(new THREE.Vector3());
+  const pb = new THREE.Box3().setFromObject(src), pc = pb.getCenter(new THREE.Vector3());
   const inner = new THREE.Group(); inner.add(src); src.position.sub(pc);
-  // la dimensión horizontal más larga de la pieza va a lo ancho del coche
-  const longH = ps.x >= ps.z ? 'x' : 'z';
-  if(longH !== A) inner.rotation.y = Math.PI/2;
   const obj = new THREE.Group(); obj.add(inner);
-  const longest = Math.max(ps.x, ps.z);
-  const W = S[A];
-  let width, pos = new THREE.Vector3();
-  const rearEdge = rs>0 ? B.max[L] : B.min[L], frontEdge = rs>0 ? B.min[L] : B.max[L];
-  if(cat==='spoiler'){
-    width = W*.85;
-    pos[L] = rearEdge - rs*S[L]*.07;
-    pos.y = bodyHeightAt(pos) + ps.y*(width/longest)/2;
-  } else if(cat==='exhaust'){
-    width = W*.18;
-    pos[L] = rearEdge - rs*.05; pos.y = S.y*.2; pos[A] = W*.3;
-  } else if(cat==='aero'){
-    width = W*.95;
-    pos[L] = frontEdge + rs*.05; pos.y = S.y*.08;
-  } else if(cat==='bodykit'){
-    // paragolpes, faldones, aletas: se escala al ancho del coche y se deja en el centro para ajustarlo
-    width = W*1.02; pos.y = S.y*.35;
-  } else {
-    width = W*.4; pos.y = B.max.y + .2;
+  const f = carFrame();
+  orientPart(inner, cat, rs);
+  if(!(f && placePart(obj, inner, cat, meta, f))){
+    // sin carrocería medible: colocación aproximada por la caja del coche
+    const ps = new THREE.Box3().setFromObject(inner).getSize(new THREE.Vector3());
+    const W = S[A], longest = Math.max(ps.x, ps.z), pos = new THREE.Vector3();
+    const rearEdge = rs>0 ? B.max[L] : B.min[L], frontEdge = rs>0 ? B.min[L] : B.max[L];
+    let width;
+    if(cat==='spoiler'){ width = W*.85; pos[L] = rearEdge - rs*S[L]*.07; pos.y = bodyHeightAt(pos) + ps.y*(width/longest)/2; }
+    else if(cat==='exhaust'){ width = W*.18; pos[L] = rearEdge - rs*.05; pos.y = S.y*.2; pos[A] = W*.3; }
+    else if(cat==='aero'){ width = W*.95; pos[L] = frontEdge + rs*.05; pos.y = S.y*.08; }
+    else if(cat==='bodykit'){ width = W*1.02; pos.y = S.y*.35; }
+    else { width = W*.4; pos.y = B.max.y + .2; }
+    obj.scale.setScalar(width/longest); obj.position.copy(pos);
   }
-  obj.scale.setScalar(width/longest);
-  obj.position.copy(pos);
-  // la pieza mira hacia la trasera (giro 180° si hace falta, con el botón)
   obj.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; o.userData.origMat = o.material; } });
   obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[], meta};
   // ocultar la pieza de serie equivalente, si se reconoce por su nombre
@@ -1553,6 +1602,124 @@ function mountAddon(src, meta, cat){
       ? 'Alerón colocado. Si el de serie va pegado a la carrocería, quítalo con "Recortar zona" en Piezas del modelo.'
       : `${PART_CATS[cat].label} colocada. Si el coche tiene una de serie, tócala y asígnala a "Ocultar".`);
   return obj;
+}
+// Puntos de la pieza (muestra) en las coordenadas del objeto raíz
+function partPoints(o, max=6000){
+  o.updateMatrixWorld(true);
+  const ms = []; let total = 0;
+  o.traverse(m=>{ if(m.isMesh && m.visible){ ms.push(m); total += m.geometry.attributes.position.count; } });
+  const step = Math.max(1, Math.floor(total/max)), out = [];
+  ms.forEach(m=>{ const pos = m.geometry.attributes.position;
+    for(let i=0;i<pos.count;i+=step) out.push(new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(m.matrixWorld)); });
+  return out;
+}
+// Gira la pieza para que quede como en el coche: ancho a lo ancho, arriba hacia arriba
+// y la parte trasera hacia atrás. Se deduce de la forma, no del nombre.
+function orientPart(inner, cat, rs){
+  const L = axes.len, A = axes.lat, ax = {x:new THREE.Vector3(1,0,0), y:new THREE.Vector3(0,1,0), z:new THREE.Vector3(0,0,1)};
+  const rot = (k, ang)=>{ inner.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(ax[k], ang)); inner.updateMatrixWorld(true); };
+  const box = pts=>new THREE.Box3().setFromPoints(pts);
+  let pts = partPoints(inner), b = box(pts), s = b.getSize(new THREE.Vector3());
+  if(cat==='exhaust'){
+    // el tubo va a lo largo del coche
+    const long = ['x','y','z'].reduce((a,k)=>s[k]>s[a]?k:a,'x');
+    if(long==='y') rot(A, Math.PI/2); else if(long!==L) rot('y', Math.PI/2);
+    pts = partPoints(inner); b = box(pts); s = b.getSize(new THREE.Vector3());
+    // la boca (el extremo más gordo) mira hacia atrás
+    const end = sign=>{ const e = new THREE.Box3();
+      pts.forEach(p=>{ if((p[L]-(sign>0?b.max[L]:b.min[L]))*sign > -s[L]*.15) e.expandByPoint(p); });
+      const z = e.getSize(new THREE.Vector3()); return Math.max(z.y, z[A]); };
+    if((end(1) > end(-1) ? 1 : -1) !== rs) rot('y', Math.PI);
+    return;
+  }
+  if((s.x >= s.z ? 'x' : 'z') !== A) rot('y', Math.PI/2);
+  if(cat!=='spoiler') return;
+  pts = partPoints(inner); b = box(pts); s = b.getSize(new THREE.Vector3());
+  // boca abajo: el ala es ancha y los soportes estrechos; si lo ancho está abajo, se voltea
+  const band = (lo,hi)=>{ const e = new THREE.Box3(); pts.forEach(p=>{ const t = (p.y-b.min.y)/s.y; if(t>=lo && t<=hi) e.expandByPoint(p); }); return e.isEmpty() ? 0 : e.getSize(new THREE.Vector3())[A]; };
+  if(band(0,.3) > band(.7,1)*1.25) rot(L, Math.PI);
+  pts = partPoints(inner); b = box(pts); s = b.getSize(new THREE.Vector3());
+  // delante/detrás: el ala sube hacia su borde de salida, que va atrás
+  const top = pts.filter(p=>p.y > b.min.y + s.y*.6);
+  if(top.length > 10){
+    const ml = top.reduce((t,p)=>t+p[L],0)/top.length, my = top.reduce((t,p)=>t+p.y,0)/top.length;
+    let cov = 0; top.forEach(p=>cov += (p[L]-ml)*(p.y-my));
+    if(Math.abs(cov) > 1e-12 && Math.sign(cov) !== rs) rot('y', Math.PI);
+  }
+}
+// Borde trasero de la tapa del maletero (o del portón): donde, yendo desde atrás hacia
+// delante por arriba, la carrocería deja de subir en vertical y se vuelve casi plana.
+function findDeck(f){
+  const {bb,S,C,L,A,rs} = f, edge = rs>0 ? bb.max[L] : bb.min[L];
+  const region = bb.clone(); if(rs>0) region.min[L] = edge - S[L]*.45; else region.max[L] = edge + S[L]*.45;
+  region.min[A] = C[A]-S[A]*.3; region.max[A] = C[A]+S[A]*.3;
+  const g = rayGrid(region, 'y'), p = new THREE.Vector3(), step = .01, hs = [];
+  for(let d=0; d<S[L]*.44; d+=step){
+    const vals = [-.2,0,.2].map(o=>{ p[L] = edge - rs*d; p[A] = C[A]+o*S[A]; p.y = bb.max.y+1; return g.cast(p,-1); }).filter(x=>x!==null).sort((a,b)=>a-b);
+    hs.push(vals.length ? vals[vals.length>>1] : null);
+  }
+  for(let i=0;i<hs.length-5;i++){
+    if(hs[i]===null || hs[i+5]===null || hs[i] < bb.min.y + S.y*.45) continue;
+    if(Math.abs(hs[i+5]-hs[i])/(5*step) < .35) return {l: edge - rs*i*step, y: hs[i]};
+  }
+  return null;
+}
+// Ancho de la carrocería a una altura y posición longitudinal dadas
+function bodyWidthAt(f, l, y){
+  const {bb,S,C,L,A} = f, region = bb.clone();
+  region.min[L] = l-.05; region.max[L] = l+.05; region.min.y = y-.05; region.max.y = y+.05;
+  const g = rayGrid(region, A), p = new THREE.Vector3(); p[L] = l; p.y = y;
+  p[A] = bb.max[A]+1; const a1 = g.cast(p,-1); p[A] = bb.min[A]-1; const a0 = g.cast(p,1);
+  return a1!==null && a0!==null && a1-a0 > S[A]*.3 ? a1-a0 : S[A];
+}
+// Baja o sube la pieza hasta que sus puntos más bajos (patas del alerón) toquen la carrocería
+function seatOnBody(obj, f){
+  const pts = partPoints(obj), b = new THREE.Box3().setFromPoints(pts), h = b.max.y-b.min.y;
+  const feet = pts.filter(p=>p.y < b.min.y + h*.12);
+  const region = b.clone().expandByScalar(.05); region.min.y = f.bb.min.y; region.max.y = f.bb.max.y;
+  const g = rayGrid(region, 'y'), q = new THREE.Vector3();
+  let shift = -Infinity; const step = Math.max(1, Math.floor(feet.length/80));
+  for(let i=0;i<feet.length;i+=step){ q.copy(feet[i]); q.y = f.bb.max.y+1; const hy = g.cast(q,-1); if(hy!==null) shift = Math.max(shift, hy - feet[i].y); }
+  if(shift > -Infinity) obj.position.y += shift - .003;
+  return shift > -Infinity;
+}
+// Tamaño y posición según el tipo de pieza y la forma medida del coche.
+// Devuelve false si no se ha podido medir (se usa la colocación aproximada).
+function placePart(obj, inner, cat, meta, f){
+  const {bb,S,C,L,A,rs,F} = f;
+  const s = new THREE.Box3().setFromObject(inner).getSize(new THREE.Vector3());
+  const pos = new THREE.Vector3(); pos[A] = C[A];
+  if(cat==='spoiler'){
+    const deck = findDeck(f); if(!deck) return false;
+    const wing = s.y > s[L]*.45;   // con patas (GT wing) o pegado al maletero (ducktail, lip)
+    const k = bodyWidthAt(f, deck.l, deck.y-.06) * (wing ? .88 : .97) / s[A];
+    obj.scale.setScalar(k);
+    pos[L] = deck.l - rs*(s[L]*k/2 - (wing ? 0 : .01));
+    pos.y = deck.y + s.y*k/2 + .2;
+    obj.position.copy(pos);
+    return seatOnBody(obj, f);
+  }
+  if(cat==='exhaust'){
+    const bump = sampleBumper(f, rs, .9); if(!bump) return false;
+    const k = .1/Math.max(s.y, s[A], .001);   // boca de unos 10 cm
+    const la = C[A] + S[A]*.3, q = bump.reduce((a,x)=>Math.abs(x.a-la) < Math.abs(a.a-la) ? x : a);
+    obj.scale.setScalar(k);
+    pos[A] = q.a; pos[L] = q.l + rs*(.03 - s[L]*k/2); pos.y = q.y + .01;
+    obj.position.copy(pos);
+    return true;
+  }
+  if(cat==='aero'){
+    const rear = /diffus|difusor/i.test(meta.name||''), dir = rear ? rs : F;
+    const bump = sampleBumper(f, dir, rear ? .8 : .96); if(!bump) return false;
+    const width = bump[bump.length-1].a - bump[0].a;
+    const k = width/s[A], depth = s[L]*k;
+    obj.scale.setScalar(k);
+    const ml = bump.reduce((t,x)=>t+x.l,0)/bump.length, my = Math.min(...bump.map(x=>x.y));
+    pos[L] = ml + dir*depth*.1; pos.y = my - s.y*k/2 + .005;
+    obj.position.copy(pos);
+    return true;
+  }
+  return false;
 }
 const carbonMat = new THREE.MeshPhysicalMaterial({color:0x15171a, metalness:.2, roughness:.35, clearcoat:1, clearcoatRoughness:.05});
 function paintAddon(obj, mode){
@@ -1682,7 +1849,8 @@ document.querySelectorAll('#cutTools [data-cmode]').forEach(b=>b.onclick=()=>{
 // ---------- separar una pieza en sus trozos sueltos ----------
 // Muchas veces el alerón de serie está en la misma malla que la carrocería pero no
 // cosido a ella: es un "islote" de triángulos. Aquí se separa cada islote en su pieza.
-function splitIslands(m){
+// A qué trozo suelto (grupo de triángulos cosidos entre sí) pertenece cada triángulo
+function meshIslands(m){
   const geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
   const pos = geo.attributes.position, tris = pos.count/3;
   geo.computeBoundingBox();
@@ -1698,6 +1866,10 @@ function splitIslands(m){
   for(let t=0;t<tris;t++){ uni(vid[t*3],vid[t*3+1]); uni(vid[t*3],vid[t*3+2]); }
   const comp = new Int32Array(tris), count = new Map();
   for(let t=0;t<tris;t++){ const r = find(vid[t*3]); comp[t] = r; count.set(r,(count.get(r)||0)+1); }
+  return {geo, comp, count, tris};
+}
+function splitIslands(m){
+  const {comp, count, tris} = meshIslands(m);
   if(count.size < 2) return null;
   // los islotes diminutos (tornillos, letras) se quedan con el trozo principal
   const main = [...count.entries()].sort((a,b)=>b[1]-a[1])[0][0];
@@ -2220,6 +2392,7 @@ async function loadBuild(id){
         else if(op.op==='islands') islandsOf(meshesById(op.ids));
         else if(op.op==='tires') autoTires();
         else if(op.op==='colors') classifyWheelsByColor();
+        else if(op.op==='calipers'){ detectCalipers(false); applyLow(); buildMeshList(); }
       }
     } finally { replaying = false; }
     ops = (b.ops||[]).slice();
