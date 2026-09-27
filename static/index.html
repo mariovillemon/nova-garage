@@ -183,6 +183,21 @@ details.cat[open] summary::after{content:"–"}
     </div>
   </details>
 
+  <details class="cat" data-cat="vinyl">
+    <summary>Vinilos</summary>
+    <div class="catbody">
+      <p class="sub">Elige uno y toca la carrocería donde quieras ponerlo. Las franjas van solas de morro a culo.</p>
+      <div class="row">
+        <button data-vinyl="stripes">Franjas racing</button>
+        <button data-vinyl="number">Número</button>
+        <button data-vinyl="text">Texto</button>
+        <label class="file" style="background:transparent;color:var(--ink);border-color:var(--line);font-weight:400">Imagen (PNG)<input id="vinylFile" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+      </div>
+      <div id="vinylList" style="margin-top:10px"></div>
+      <div id="vinylEdit" hidden></div>
+    </div>
+  </details>
+
   <details class="cat" data-cat="calipers">
     <summary>Frenos</summary>
     <div class="catbody" id="ed-calipers"></div>
@@ -319,6 +334,7 @@ details.cat[open] summary::after{content:"–"}
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/TransformControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/geometries/DecalGeometry.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
 <script>
@@ -587,6 +603,7 @@ function applyLow(){
   queueMicrotask(()=>{ if(selection.size) refreshSel(); });
   const d = state.low/1000;
   if(typeof addonRoot!=='undefined') addonRoot.position.y = -d;
+  if(typeof vinylRoot!=='undefined') vinylRoot.position.y = -d;
   const cam = THREE.MathUtils.degToRad(state.camber);
   const sp = state.spacer/1000;
   meshes.forEach(m=>{               // orden de recorrido: padres antes que hijos
@@ -614,6 +631,7 @@ function loadObject(obj, name){
   if(typeof clearAddons==='function') clearAddons();
   if(root) scene.remove(root);
   ops = [];
+  if(typeof clearVinyls==='function') clearVinyls();
   root = new THREE.Group(); root.add(obj); scene.add(root);
   // Normalizar: 4,4 m de largo, apoyado en el suelo y centrado
   let b = new THREE.Box3().setFromObject(root), s = b.getSize(new THREE.Vector3());
@@ -697,6 +715,7 @@ renderer.domElement.addEventListener('pointerup',e=>{
   ptr.set((e.clientX-r.left)/r.width*2-1, -(e.clientY-r.top)/r.height*2+1);
   ray.setFromCamera(ptr,camera);
   const hit = ray.intersectObjects(meshes.filter(m=>m.visible),false)[0];
+  if(vinylClick()) return;
   const multi = e.ctrlKey || e.metaKey || e.shiftKey;
   if(multi){ if(hit) toggleSel(hit.object); return; }
   selectMesh(hit?hit.object:null);
@@ -2409,6 +2428,7 @@ async function saveBuild(){
     id: currentBuild && currentBuild.name===name ? currentBuild.id : undefined,
     car: currentCar, state: JSON.parse(JSON.stringify(state)), ops,
     wheels: wheelState.meta ? {meta:wheelState.meta, rimIn:wheelState.rimIn, flip:wheelState.flip} : null,
+    vinyls: vinylSave(),
     addons: addonRoot.children.map(o=>({
       cat:o.userData.category, name:o.userData.name, paint:o.userData.paint,
       meta:o.userData.meta || null, gen:o.userData.gen ? {type:o.userData.gen.type, p:o.userData.gen.p} : null,
@@ -2470,6 +2490,7 @@ async function loadBuild(id){
       obj.userData.hid.forEach(m=>m.visible = true);
       obj.userData.hid = meshesById(a.hid||[]); obj.userData.hid.forEach(m=>m.visible = false);
     }
+    await vinylLoad(b.vinyls);
     selectAddon(null); buildAddonList(); buildMeshList();
     currentBuild = {id:b.id, name:b.name};
     setCarName(b.name, b.carName + (b.car ? ` · por ${b.car.author}` : ''));
@@ -2495,6 +2516,220 @@ async function refreshBuilds(){
 }
 $('saveBuild').onclick = saveBuild;
 refreshBuilds();
+
+// =====================================================================
+//  Vinilos: franjas, dorsales, texto e imágenes proyectados sobre la pintura
+// =====================================================================
+// Cada vinilo guarda dónde se tocó (coordenadas del coche sin rebajar), la normal de la
+// chapa, tamaño y giro. La malla se crea proyectando una caja sobre las piezas de
+// carrocería (DecalGeometry), así el vinilo sigue las curvas de la chapa.
+const vinylRoot = new THREE.Group(); scene.add(vinylRoot);   // baja con el rebaje (applyLow)
+const VINYL = {
+  stripes:{label:'Franjas racing', p:{w:['Ancho de cada franja (cm)',5,45,22], gap:['Separación (cm)',0,30,8]}},
+  number: {label:'Número',         p:{size:['Tamaño (cm)',15,90,45], rot:['Giro (°)',-180,180,0]}},
+  text:   {label:'Texto',          p:{size:['Ancho (cm)',20,250,110], rot:['Giro (°)',-180,180,0]}},
+  image:  {label:'Imagen',         p:{size:['Ancho (cm)',10,250,60], rot:['Giro (°)',-180,180,0]}}
+};
+let vinyls = [], activeVinyl = null, vinylPlacing = null;   // vinylPlacing: {type} o {move:v}
+const vinylTargets = ()=>meshes.filter(m=>m.visible && !m.userData.addon && m.userData.role==='body' && m.geometry.attributes.normal);
+
+// textura del vinilo dibujada en un canvas. Devuelve {tex, aspect} (alto/ancho)
+function vinylTexture(v){
+  const cv = document.createElement('canvas'), cx = cv.getContext('2d');
+  if(v.type==='stripes'){
+    const w = v.p.w, g = v.p.gap, tot = 2*w+g, H = 512;
+    cv.width = 8; cv.height = H; cx.fillStyle = v.color;
+    cx.fillRect(0,0,8,H*w/tot); cx.fillRect(0,H*(w+g)/tot,8,H*w/tot+1);
+  } else if(v.type==='number'){
+    cv.width = cv.height = 512;
+    cx.fillStyle = v.bg; cx.beginPath(); cx.arc(256,256,250,0,Math.PI*2); cx.fill();
+    cx.fillStyle = v.color; cx.font = `italic 700 ${v.text.length>2?230:300}px "Barlow Condensed",Barlow,sans-serif`;
+    cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(v.text, 256, 270);
+  } else if(v.type==='text'){
+    const font = `italic 700 200px "Barlow Condensed",Barlow,sans-serif`;
+    cx.font = font; const tw = Math.ceil(cx.measureText(v.text||' ').width)+40;
+    cv.width = Math.min(4096, tw); cv.height = 240;
+    cx.font = font; cx.fillStyle = v.color; cx.textBaseline = 'middle'; cx.fillText(v.text, 20, 128);
+  } else if(v.type==='image' && v._img){
+    cv.width = v._img.width; cv.height = v._img.height; cx.drawImage(v._img,0,0);
+  }
+  const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return {tex, aspect: cv.height/cv.width};
+}
+
+// Caja de proyección: centro, orientación y tamaño en coordenadas del mundo
+function vinylBox(v){
+  const d = state.low/1000, L = axes.len, A = axes.lat;
+  if(v.type==='stripes'){
+    // de morro a culo por el centro, proyectadas desde arriba
+    const f = carFrame(); if(!f) return null;
+    const x = new THREE.Vector3(); x[L] = 1;
+    const z = new THREE.Vector3(0,1,0), y = new THREE.Vector3().crossVectors(z, x);
+    const pos = f.C.clone(); pos[A] = f.C[A] + (v.p.off||0)/100; pos.y -= d;
+    const size = new THREE.Vector3(f.S[L]*1.1, (2*v.p.w+v.p.gap)/100, f.S.y*1.3);
+    return {pos, rot:new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z)), size, facing:z, minDot:-.15};
+  }
+  const n = new THREE.Vector3().fromArray(v.n).normalize(), up = new THREE.Vector3(0,1,0);
+  let x = new THREE.Vector3().crossVectors(up, n);
+  if(x.lengthSq() < 1e-4){ x.set(0,0,0); x[L] = 1; }
+  x.normalize();
+  const y = new THREE.Vector3().crossVectors(n, x);
+  const r = THREE.MathUtils.degToRad(v.p.rot||0), c = Math.cos(r), s = Math.sin(r);
+  const xr = x.clone().multiplyScalar(c).addScaledVector(y, s), yr = y.clone().multiplyScalar(c).addScaledVector(x, -s);
+  const w = v.p.size/100;
+  const pos = new THREE.Vector3().fromArray(v.pos); pos.y -= d;
+  return {pos, rot:new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xr,yr,n)),
+          size:new THREE.Vector3(w, w*v._aspect, Math.max(.25, w*.6)), facing:n, minDot:.15};
+}
+// quita los triángulos que no miran hacia el proyector (interior, bajos, el otro lado)
+function keepFacing(g, dir, minDot){
+  const pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv, P = [], N = [], U = [];
+  for(let i=0;i<pos.count;i+=3){
+    // se usa la normal de los vértices (la geométrica puede venir al revés en algunos modelos)
+    const vn = new THREE.Vector3().fromBufferAttribute(nor,i).add(new THREE.Vector3().fromBufferAttribute(nor,i+1)).add(new THREE.Vector3().fromBufferAttribute(nor,i+2)).normalize();
+    if(vn.dot(dir) < minDot) continue;
+    for(let k=0;k<3;k++){ P.push(pos.getX(i+k),pos.getY(i+k),pos.getZ(i+k)); N.push(nor.getX(i+k),nor.getY(i+k),nor.getZ(i+k)); U.push(uv.getX(i+k),uv.getY(i+k)); }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(P,3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(N,3));
+  out.setAttribute('uv', new THREE.Float32BufferAttribute(U,2));
+  return out;
+}
+function buildVinyl(v){
+  if(v.group){ vinylRoot.remove(v.group); v.group.traverse(o=>o.geometry && o.geometry.dispose()); }
+  if(v.tex) v.tex.dispose();
+  const t = vinylTexture(v); v.tex = t.tex; v._aspect = t.aspect;
+  const bx = vinylBox(v); v.group = new THREE.Group();
+  vinylRoot.add(v.group);
+  if(!bx) return;
+  v.mat = v.mat || new THREE.MeshPhysicalMaterial({transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-4,
+    roughness:.3, metalness:0, clearcoat:.8, clearcoatRoughness:.1});
+  v.mat.map = v.tex; v.mat.needsUpdate = true;
+  root.updateMatrixWorld(true);
+  const d = state.low/1000, reach = new THREE.Sphere(bx.pos, bx.size.length()/2), tb = new THREE.Box3();
+  vinylTargets().forEach(m=>{
+    if(!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    if(!tb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld).intersectsSphere(reach)) return;
+    let g = new THREE.DecalGeometry(m, bx.pos, bx.rot, bx.size);
+    if(!g.attributes.position.count) return;
+    g = keepFacing(g, bx.facing, bx.minDot);
+    if(!g.attributes.position.count) return;
+    g.translate(0, d, 0);   // del mundo actual a coordenadas del coche sin rebajar
+    const dm = new THREE.Mesh(g, v.mat); dm.renderOrder = 2; dm.receiveShadow = true;
+    v.group.add(dm);
+  });
+}
+function vinylDefaults(type){ const p = {}; Object.entries(VINYL[type].p).forEach(([k,x])=>p[k] = x[3]); return p; }
+function newVinyl(type, extra={}){
+  return {type, p:vinylDefaults(type), color: type==='number' ? '#111111' : '#f2f2f2', bg:'#f2f2f2',
+          text: type==='number' ? '27' : type==='text' ? 'NØVA' : '', ...extra};
+}
+function addVinyl(v){ vinyls.push(v); buildVinyl(v); selectVinyl(v); buildVinylList(); return v; }
+function selectVinyl(v){ activeVinyl = v; buildVinylList(); }
+function removeVinyl(v){
+  if(v.group) vinylRoot.remove(v.group);
+  vinyls = vinyls.filter(x=>x!==v); if(activeVinyl===v) activeVinyl = null; buildVinylList();
+}
+function clearVinyls(){ [...vinyls].forEach(removeVinyl); vinylPlacing = null; }
+function rebuildVinyls(){ vinyls.forEach(buildVinyl); }
+const vinylName = v=>`${VINYL[v.type].label}${v.text ? ': '+v.text : ''}`;
+
+function buildVinylList(){
+  const box = $('vinylList'); box.innerHTML = '';
+  vinyls.forEach(v=>{
+    const row = document.createElement('div'); row.className = 'm'+(v===activeVinyl?' sel':'');
+    const sp = document.createElement('span'); sp.textContent = vinylName(v); sp.onclick = ()=>selectVinyl(v);
+    row.append(sp); box.append(row);
+  });
+  const ed = $('vinylEdit'); ed.innerHTML = ''; ed.hidden = !activeVinyl;
+  const v = activeVinyl; if(!v) return;
+  let t = null; const later = ()=>{ clearTimeout(t); t = setTimeout(()=>buildVinyl(v), 90); };   // proyectar cuesta: se espera a que pare el deslizador
+  Object.entries(VINYL[v.type].p).forEach(([k,[label,min,max]])=>{
+    const lab = document.createElement('label'); lab.className = 'sl';
+    const val = document.createElement('b'); val.textContent = v.p[k]; lab.append(label+' ', val);
+    const r = document.createElement('input'); r.type = 'range'; r.min = min; r.max = max; r.value = v.p[k];
+    r.oninput = ()=>{ v.p[k] = +r.value; val.textContent = r.value; later(); };
+    ed.append(lab, r);
+  });
+  const row = document.createElement('div'); row.className = 'row'; row.style.marginTop = '10px';
+  const color = (label, key)=>{ const i = document.createElement('input'); i.type = 'color'; i.value = v[key]; i.title = label; i.setAttribute('aria-label', label);
+    i.oninput = ()=>{ v[key] = i.value; later(); }; row.append(i); };
+  if(v.type!=='image') color('Color', 'color');
+  if(v.type==='number') color('Fondo', 'bg');
+  if(v.type==='number' || v.type==='text'){
+    const i = document.createElement('input'); i.type = 'search'; i.value = v.text; i.setAttribute('aria-label','Texto del vinilo');
+    i.maxLength = v.type==='number' ? 3 : 40;
+    i.oninput = ()=>{ v.text = i.value; later(); };
+    i.onchange = ()=>buildVinylList();
+    row.append(i);
+  }
+  ed.append(row);
+  const acts = document.createElement('div'); acts.className = 'row'; acts.style.marginTop = '8px';
+  const btn = (txt, fn)=>{ const b = document.createElement('button'); b.textContent = txt; b.onclick = fn; acts.append(b); };
+  if(v.type!=='stripes'){
+    btn('Recolocar', ()=>{ vinylPlacing = {move:v}; flash('Toca la carrocería donde quieras moverlo'); });
+    btn('Duplicar al otro lado', ()=>{
+      const L = axes.len, A = axes.lat, C = carFrame()?.C || new THREE.Vector3();
+      const pos = new THREE.Vector3().fromArray(v.pos), n = new THREE.Vector3().fromArray(v.n);
+      pos[A] = 2*C[A] - pos[A]; n[A] = -n[A];
+      addVinyl({...v, p:{...v.p, rot:-(v.p.rot||0)}, pos:pos.toArray(), n:n.toArray(), group:null, tex:null, mat:null});
+    });
+  }
+  btn('Quitar', ()=>removeVinyl(v));
+  ed.append(acts);
+}
+
+// clic en la carrocería mientras se coloca un vinilo (lo llama el manejador de clics)
+function vinylClick(){
+  if(!vinylPlacing) return false;
+  const hit = ray.intersectObjects(vinylTargets(), false)[0];
+  if(!hit){ flash('Toca la pintura de la carrocería'); return true; }
+  const d = state.low/1000, p = hit.point.clone(); p.y += d;
+  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  if(n.dot(ray.ray.direction) > 0) n.negate();   // normal hacia la cámara
+  if(vinylPlacing.move){ const v = vinylPlacing.move; v.pos = p.toArray(); v.n = n.toArray(); buildVinyl(v); selectVinyl(v); }
+  else addVinyl(newVinyl(vinylPlacing.type, {pos:p.toArray(), n:n.toArray(), ...(vinylPlacing.extra||{})}));
+  vinylPlacing = null;
+  return true;
+}
+function startVinyl(type, extra){
+  if(!vinylTargets().length){ flash('No hay piezas marcadas como carrocería para vinilar'); return; }
+  if(type==='stripes'){ addVinyl(newVinyl('stripes')); flash('Franjas aplicadas. Ajusta ancho, separación y color.'); return; }
+  vinylPlacing = {type, extra}; flash('Toca la carrocería donde quieras ponerlo');
+}
+document.querySelectorAll('[data-vinyl]').forEach(b=>b.onclick=()=>startVinyl(b.dataset.vinyl));
+$('vinylFile').onchange = e=>{
+  const f = e.target.files[0]; if(!f) return; e.target.value = '';
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    // se reduce a 1024 px para que el build no pese demasiado
+    const img = new Image();
+    img.onload = ()=>{
+      const k = Math.min(1, 1024/Math.max(img.width, img.height)), cv = document.createElement('canvas');
+      cv.width = Math.round(img.width*k); cv.height = Math.round(img.height*k);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      const src = cv.toDataURL('image/png'), im = new Image();
+      im.onload = ()=>startVinyl('image', {src, _img:im, text:f.name.replace(/\.[^.]+$/,'')});
+      im.src = src;
+    };
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(f);
+};
+// para builds
+const vinylSave = ()=>vinyls.map(v=>({type:v.type, p:v.p, color:v.color, bg:v.bg, text:v.text, pos:v.pos, n:v.n, src:v.src}));
+async function vinylLoad(list){
+  clearVinyls();
+  for(const s of list||[]){
+    const v = {...newVinyl(s.type), ...s, p:{...vinylDefaults(s.type), ...s.p}};
+    if(v.type==='image'){ if(!v.src) continue; v._img = await new Promise(r=>{ const i = new Image(); i.onload = ()=>r(i); i.onerror = ()=>r(null); i.src = v.src; }); if(!v._img) continue; }
+    vinyls.push(v); buildVinyl(v);
+  }
+  activeVinyl = null; buildVinylList();
+}
+buildVinylList();
 
 buildEditor(); demoCar(); resize();
 (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();

@@ -27,7 +27,7 @@ uvicorn main:app --reload   # http://localhost:8000
   - `GET /api/search`: búsqueda de respaldo (casi nunca funciona, ver abajo).
 - `static/index.html` — todo el frontend en un único archivo (HTML + CSS + JS).
   three.js **r147** por CDN (jsdelivr, builds UMD de `examples/js`): OrbitControls,
-  GLTFLoader, RoomEnvironment, TransformControls, GLTFExporter.
+  GLTFLoader, RoomEnvironment, TransformControls, GLTFExporter, DecalGeometry.
 
 ## Decisiones importantes (no deshacer sin motivo)
 - **Sketchfab bloquea con anti-bots** (responde 202 vacío) las peticiones desde Python.
@@ -75,6 +75,11 @@ uvicorn main:app --reload   # http://localhost:8000
 - Pinzas por forma (`detectCalipers`, se ejecuta al cargar): dentro de cada rueda, un trozo suelto
   (`meshIslands`) que ocupa ≤130° de arco, no llega al buje ni al neumático y va por dentro de la
   cara de la llanta es pinza; si viene fusionada con disco/llanta se parte.
+- Vinilos (`VINYL`, `buildVinyl`): textura dibujada en canvas (franjas, número, texto o PNG
+  reducido a 1024 px) proyectada con `DecalGeometry` sobre las piezas `body`; se descartan los
+  triángulos que no miran al proyector (`keepFacing`). Cada vinilo guarda punto y normal en
+  coordenadas del coche sin rebajar; cuelgan de `vinylRoot`, que baja con `applyLow`. Las franjas
+  se proyectan desde arriba a lo largo de todo el coche. Van en el build (`vinylSave/vinylLoad`).
 - `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
 
 ## Pendiente (por prioridad)
