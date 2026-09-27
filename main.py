@@ -213,6 +213,62 @@ def cached_models():
     return out
 
 
+# ---------- builds: coche + pintura + stance + llantas + piezas ----------
+BUILDS = CACHE / "builds"
+BUILDS.mkdir(exist_ok=True)
+
+
+def build_file(bid: str) -> Path:
+    if not UID_RE.match(bid):
+        raise HTTPException(400, "Id de build no válido")
+    return BUILDS / f"{bid}.json"
+
+
+@app.get("/api/builds")
+def list_builds():
+    """Builds guardados (sin el detalle, solo lo que hace falta para la lista)."""
+    out = []
+    for f in sorted(BUILDS.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        b = json.loads(f.read_text(encoding="utf-8"))
+        out.append({k: b.get(k) for k in ("id", "name", "carName", "date", "thumb")})
+    return out
+
+
+@app.get("/api/builds/{bid}")
+def get_build(bid: str):
+    f = build_file(bid)
+    if not f.exists():
+        raise HTTPException(404, "Build no encontrado")
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+@app.post("/api/builds")
+async def save_build(request: Request):
+    """Guarda un build. Si trae un id existente, lo sobrescribe."""
+    only_local(request)
+    try:
+        b = json.loads(await request.body())
+    except ValueError:
+        raise HTTPException(400, "JSON no válido")
+    if not isinstance(b, dict):
+        raise HTTPException(400, "JSON no válido")
+    bid = b.get("id")
+    if not (isinstance(bid, str) and UID_RE.match(bid)):
+        bid = uuid.uuid4().hex
+    b["id"] = bid
+    build_file(bid).write_text(json.dumps(b, ensure_ascii=False), encoding="utf-8")
+    return {"id": bid}
+
+
+@app.delete("/api/builds/{bid}")
+def delete_build(bid: str, request: Request):
+    only_local(request)
+    f = build_file(bid)
+    if f.exists():
+        f.unlink()
+    return {"ok": True}
+
+
 app.mount("/files", StaticFiles(directory=CACHE), name="files")
 
 

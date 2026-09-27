@@ -86,6 +86,12 @@ details.cat[open] summary::after{content:"–"}
 #selbar[hidden]{display:none}
 #selbar b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #selbar small{color:var(--mute);font-size:12px}
+.q{margin-top:6px;font-size:12px;color:var(--mute);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.qbar{width:70px;height:6px;border-radius:3px;background:var(--line);overflow:hidden;display:inline-block}
+.qbar i{display:block;height:100%;background:var(--accent)}
+.bcard{position:relative}
+.bcard .del{position:absolute;top:4px;right:4px;padding:0 7px;background:var(--panel);font-size:13px;line-height:22px}
+#genTools:empty{display:none}
 @media (max-width:820px){
   body{grid-template-columns:1fr;grid-template-rows:48vh 1fr;overflow:auto}
   aside{border-left:0;border-top:1px solid var(--line)}
@@ -128,6 +134,7 @@ details.cat[open] summary::after{content:"–"}
       <div>
         <h2 id="carName">Coche de prueba</h2>
         <p class="sub" id="carSub">Elige un coche para empezar</p>
+        <div class="q" id="quality"></div>
         <button id="backCar" hidden style="margin-top:6px">Volver a mi coche</button>
       </div>
       <div class="row" style="flex-wrap:nowrap">
@@ -191,6 +198,19 @@ details.cat[open] summary::after{content:"–"}
     </div>
   </details>
 
+  <details class="cat" data-cat="gen">
+    <summary>Piezas a medida</summary>
+    <div class="catbody">
+      <p class="sub">Se generan siguiendo la forma de la carrocería de este coche. Luego ajusta el tamaño en Piezas añadidas.</p>
+      <div class="row">
+        <button data-gen="lip">Labio delantero</button>
+        <button data-gen="skirts">Faldones</button>
+        <button data-gen="diffuser">Difusor</button>
+        <button data-gen="fenders">Aletines</button>
+      </div>
+    </div>
+  </details>
+
   <details class="cat" data-cat="addons">
     <summary>Piezas añadidas</summary>
     <div class="catbody">
@@ -201,6 +221,7 @@ details.cat[open] summary::after{content:"–"}
           <button data-mode="rotate" aria-pressed="false">Girar</button>
           <button data-mode="scale" aria-pressed="false">Escalar</button>
         </div>
+        <div id="genTools"></div>
         <div class="row" style="margin-top:8px">
           <button data-paint="original">Original</button>
           <button data-paint="body">Color carrocería</button>
@@ -233,6 +254,15 @@ details.cat[open] summary::after{content:"–"}
       </div>
       <p class="sub">Si la detección automática falla, asigna aquí qué es cada pieza.</p>
       <div id="meshes"></div>
+    </div>
+  </details>
+
+  <details class="cat" data-cat="builds">
+    <summary>Mis builds</summary>
+    <div class="catbody">
+      <p class="sub">Guarda el coche con todo lo que le has hecho: pintura, stance, llantas, piezas y recortes.</p>
+      <button class="primary" id="saveBuild">Guardar build</button>
+      <div id="buildList" class="grid"></div>
     </div>
   </details>
 
@@ -401,6 +431,14 @@ EDITABLE.forEach(setFinish); setGlass(); setChrome();
 
 // ---------- Modelo ----------
 let root = null, meshes = [], selected = null, box = null;
+// Registro de lo que se le hace al modelo (roles, recortes, trozos). Un build lo guarda
+// y al cargarlo se repite en el mismo orden: como el proceso es determinista, las piezas
+// vuelven a quedar igual. Las piezas se identifican por su posición en la lista.
+let ops = [], replaying = false;
+const baseMeshes = ()=>meshes.filter(m=>!m.userData.addon);
+const meshIds = list=>{ const b = baseMeshes(); return [...list].map(m=>b.indexOf(m)).filter(i=>i>=0); };
+const meshesById = ids=>{ const b = baseMeshes(); return ids.map(i=>b[i]).filter(Boolean); };
+function record(op){ if(!replaying) ops.push(op); }
 
 function guessRole(name){
   const n = name.toLowerCase();
@@ -573,6 +611,7 @@ function applyLow(){
 function loadObject(obj, name){
   if(typeof clearAddons==='function') clearAddons();
   if(root) scene.remove(root);
+  ops = [];
   root = new THREE.Group(); root.add(obj); scene.add(root);
   // Normalizar: 4,4 m de largo, apoyado en el suelo y centrado
   let b = new THREE.Box3().setFromObject(root), s = b.getSize(new THREE.Vector3());
@@ -838,6 +877,7 @@ function growSameMaterial(){
 }
 function assignSel(role){
   if(!role) return;
+  record({op:'role', ids:meshIds(selection), role});
   selection.forEach(m=>{ m.userData.role = role; applyRole(m); });
   const n = meshes.length; splitMergedWheels(); buildWheelGroups(); applyLow();
   buildMeshList(); refreshSel();
@@ -888,10 +928,11 @@ function buildMeshList(){
     sel.onchange=()=>{selectMesh(m);assignSel(sel.value);};
     row.append(sp,sel); box.append(row);
   });
+  updateQuality();
 }
 
 $('file').onchange=e=>{if(e.target.files[0]){loadFile(e.target.files[0]);setCredit(null);setCarName(e.target.files[0].name.replace(/\.glb$/i,''),'Archivo local');openDrawer(false);}};
-$('demo').onclick=()=>{currentCar=null;demoCar();setCredit(null);setCarName('Coche de prueba','');openDrawer(false);};
+$('demo').onclick=()=>{currentCar=null;currentBuild=null;demoCar();setCredit(null);setCarName('Coche de prueba','');openDrawer(false);};
 $('low').oninput=e=>{state.low=+e.target.value;$('lowV').textContent=state.low+' mm';applyLow();};
 $('cam').oninput=e=>{state.camber=+e.target.value;$('camV').textContent=state.camber.toFixed(1).replace('.',',')+'°';applyLow();};
 $('sp').oninput=e=>{state.spacer=+e.target.value;$('spV').textContent=state.spacer+' mm';applyLow();};
@@ -914,12 +955,13 @@ function setCredit(m){
 }
 let currentCar = null;
 function loadURL(meta){
-  currentCar = meta;
+  currentCar = meta; currentBuild = null;
   flash('Cargando modelo…');
   openDrawer(false);
-  loader.load(meta.file, g=>{ loadObject(g.scene, meta.name); setCredit(meta); setCarName(meta.name, `por ${meta.author}`); },
+  return new Promise((res,rej)=>loader.load(meta.file,
+    g=>{ loadObject(g.scene, meta.name); setCredit(meta); setCarName(meta.name, `por ${meta.author}`); res(); },
     e=>{ if(e.lengthComputable) flash(`Cargando… ${Math.round(e.loaded/e.total*100)} %`); },
-    ()=>flash('No se pudo cargar el modelo descargado'));
+    e=>{ flash('No se pudo cargar el modelo descargado'); rej(e); }));
 }
 function card(m, onClick){
   const b = document.createElement('button'); b.className = 'card';
@@ -1045,8 +1087,8 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape' && !$('drawer').hid
   $('selNear').onclick = growNearby;
   $('selMat').onclick = growSameMaterial;
   $('selWheel').onclick = growWheel;
-  $('detTires').onclick = autoTires;
-  $('detColors').onclick = classifyWheelsByColor;
+  $('detTires').onclick = ()=>{ record({op:'tires'}); autoTires(); };
+  $('detColors').onclick = ()=>{ record({op:'colors'}); classifyWheelsByColor(); };
   $('selClear').onclick = ()=>selectMesh(null);
 
 })();
@@ -1282,7 +1324,7 @@ async function openPack(meta, src, cat='wheels'){
     const d = document.createElement('div'); d.innerHTML = `<b>${cat==='wheels'?'Llanta':'Pieza'} ${i+1}</b>`;
     b.append(img, d);
     b.onclick = ()=>{
-      const m2 = {...meta, name:`${meta.name} · ${cat==='wheels'?'llanta':'pieza'} ${i+1}`};
+      const m2 = {...meta, name:`${meta.name} · ${cat==='wheels'?'llanta':'pieza'} ${i+1}`, packIndex:i};
       if(cat==='wheels') mountWheels(list[i].clone(true), m2); else mountAddon(list[i].clone(true), m2, cat);
       openLib(false);
     };
@@ -1449,10 +1491,10 @@ function mountAddon(src, meta, cat){
   if(meta.extracted){
     const obj = new THREE.Group(); obj.add(src);
     obj.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; o.userData.origMat = o.material; } });
-    obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[]};
+    obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[], meta};
     addonRoot.add(obj); selectAddon(obj); buildAddonList(); openCat('addons');
     flash('Pieza colocada en su posición original. Si sale al revés, usa "Girar 180°".');
-    return;
+    return obj;
   }
   src.updateMatrixWorld(true);
   const pb = new THREE.Box3().setFromObject(src), ps = pb.getSize(new THREE.Vector3()), pc = pb.getCenter(new THREE.Vector3());
@@ -1485,7 +1527,7 @@ function mountAddon(src, meta, cat){
   obj.position.copy(pos);
   // la pieza mira hacia la trasera (giro 180° si hace falta, con el botón)
   obj.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; o.userData.origMat = o.material; } });
-  obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[]};
+  obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[], meta};
   // ocultar la pieza de serie equivalente, si se reconoce por su nombre
   const STOCK = {spoiler:/spoiler|wing|aler[oó]n/i, exhaust:/exhaust|muffler|tailpipe|escape/i, aero:/splitter|lip|diffuser|difusor|canard/i};
   if(STOCK[cat]){
@@ -1510,6 +1552,7 @@ function mountAddon(src, meta, cat){
     : cat==='spoiler'
       ? 'Alerón colocado. Si el de serie va pegado a la carrocería, quítalo con "Recortar zona" en Piezas del modelo.'
       : `${PART_CATS[cat].label} colocada. Si el coche tiene una de serie, tócala y asígnala a "Ocultar".`);
+  return obj;
 }
 const carbonMat = new THREE.MeshPhysicalMaterial({color:0x15171a, metalness:.2, roughness:.35, clearcoat:1, clearcoatRoughness:.05});
 function paintAddon(obj, mode){
@@ -1521,6 +1564,7 @@ function selectAddon(obj){
   activeAddon = obj;
   if(obj) tcontrols.attach(obj); else tcontrols.detach();
   $('addonTools').hidden = !obj;
+  buildGenTools(obj);
   document.querySelectorAll('#addonList .m').forEach(el=>el.classList.toggle('sel', el._obj===obj));
 }
 function buildAddonList(){
@@ -1562,6 +1606,7 @@ $('addonFlip').onclick = ()=>{ if(activeAddon) activeAddon.rotation.y += Math.PI
 $('addonMirror').onclick = ()=>{
   if(!activeAddon) return;
   const c = activeAddon.clone(true); c.userData = {...activeAddon.userData, hid:[]};
+  if(c.userData.gen) c.userData.gen = {...c.userData.gen, p:{...c.userData.gen.p}};
   c.position[axes.lat] *= -1; c.scale[axes.lat] *= -1;
   c.traverse(o=>{ if(o.isMesh) o.userData.origMat = o.userData.origMat || o.material; });
   addonRoot.add(c); buildAddonList(); selectAddon(c);
@@ -1604,6 +1649,10 @@ function applyCut(){
   cutBox.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(cutBox);
   box.translate(new THREE.Vector3(0, state.low/1000, 0));   // las piezas guardan su posición sin rebajar
+  cutWithBox(box);
+}
+function cutWithBox(box){
+  record({op:'cut', min:box.min.toArray(), max:box.max.toArray()});
   const out = []; let cut = 0;
   const bb = new THREE.Box3();
   meshes.forEach(m=>{
@@ -1663,8 +1712,10 @@ function splitIslands(m){
   });
   return Object.values(parts);
 }
-$('selIslands').onclick = ()=>{
-  const list = [...selection]; let made = [];
+$('selIslands').onclick = ()=>islandsOf([...selection]);
+function islandsOf(list){
+  record({op:'islands', ids:meshIds(list)});
+  let made = [];
   list.forEach(m=>{
     const parts = splitIslands(m);
     if(parts){ meshes.splice(meshes.indexOf(m),1,...parts); made.push(...parts); }
@@ -1672,7 +1723,7 @@ $('selIslands').onclick = ()=>{
   if(!made.length){ flash('Esta pieza no tiene trozos sueltos: está toda cosida'); return; }
   buildWheelGroups(); applyLow(); buildMeshList(); selectMesh(null);
   flash(`Separada en ${made.length} trozos. Toca ahora el que quieras quitar.`);
-};
+}
 
 // =====================================================================
 //  Coche donante: sacar piezas de coches con kit y guardarlas en la biblioteca
@@ -1723,6 +1774,500 @@ async function saveSelectionAsPart(){
   }catch(e){ flash('No se pudo guardar: '+(e.message||e)); console.error(e); }
 }
 $('saveAsPart').onclick = saveSelectionAsPart;
+
+// =====================================================================
+//  Piezas a medida: labio, faldones, difusor y aletines generados
+//  a partir de la forma de la carrocería (rayos contra el modelo)
+// =====================================================================
+// Medidas en mm (el ángulo en grados). [etiqueta, mín, máx, por defecto]
+const GEN = {
+  lip:     {name:'Labio delantero', cat:'aero', paint:'carbon',
+            p:{depth:['Salida',10,120,45], drop:['Caída',0,40,8], thick:['Grosor',4,30,10]}},
+  skirts:  {name:'Faldones', cat:'bodykit', paint:'body',
+            p:{depth:['Salida',5,80,30], drop:['Caída',0,60,15], thick:['Grosor',4,40,14]}},
+  diffuser:{name:'Difusor', cat:'aero', paint:'carbon',
+            p:{len:['Largo',100,600,320], angle:['Ángulo',0,20,9], fins:['Aletas',0,9,5]}},
+  fenders: {name:'Aletines', cat:'bodykit', paint:'body',
+            p:{width:['Ensanche',10,120,45], band:['Banda',20,150,60], thick:['Grosor',3,20,6]}}
+};
+const genMat = new THREE.MeshPhysicalMaterial({color:0x1b1c1f, metalness:0, roughness:.55, clearcoat:.3});
+const GEN_ROLES = ['body','other','chrome','lights'];
+const genTargets = ()=>meshes.filter(m=>m.visible && !m.userData.addon && !m.isSkinnedMesh && GEN_ROLES.includes(m.userData.role));
+
+// Caja de la carrocería en coordenadas del coche sin rebajar (las mismas que addonRoot)
+function carFrame(){
+  const bb = new THREE.Box3(), tb = new THREE.Box3();
+  genTargets().forEach(m=>{ if(!m.geometry.boundingBox) m.geometry.computeBoundingBox(); bb.union(tb.copy(m.geometry.boundingBox).applyMatrix4(m.userData.origWorld)); });
+  if(bb.isEmpty()) return null;
+  const rs = rearSign();
+  return {bb, S:bb.getSize(new THREE.Vector3()), C:bb.getCenter(new THREE.Vector3()), L:axes.len, A:axes.lat, rs, F:-rs};
+}
+
+// Los rayos van siempre paralelos a un eje. Se recogen los triángulos de la carrocería
+// que caen en una zona y se reparten en una rejilla 2D perpendicular a ese eje: cada rayo
+// solo prueba los triángulos de su celda. Con el raycaster normal, miles de rayos contra
+// un modelo de 500k caras tardarían minutos.
+function rayGrid(region, axis){
+  const [u,w] = ['x','y','z'].filter(k=>k!==axis);
+  const T = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), tb = new THREE.Box3();
+  genTargets().forEach(m=>{
+    const g = m.geometry; if(!g.boundingBox) g.computeBoundingBox();
+    if(!tb.copy(g.boundingBox).applyMatrix4(m.userData.origWorld).intersectsBox(region)) return;
+    const W = m.userData.origWorld, pos = g.attributes.position, idx = g.index;
+    const n = (idx ? idx.count : pos.count)/3;
+    for(let t=0;t<n;t++){
+      a.fromBufferAttribute(pos, idx ? idx.getX(t*3)   : t*3  ).applyMatrix4(W);
+      b.fromBufferAttribute(pos, idx ? idx.getX(t*3+1) : t*3+1).applyMatrix4(W);
+      c.fromBufferAttribute(pos, idx ? idx.getX(t*3+2) : t*3+2).applyMatrix4(W);
+      tb.makeEmpty().expandByPoint(a).expandByPoint(b).expandByPoint(c);
+      if(tb.intersectsBox(region)) T.push(a[u],a[w],a[axis], b[u],b[w],b[axis], c[u],c[w],c[axis]);
+    }
+  });
+  const nT = T.length/9, cs = Math.max(region.max[u]-region.min[u], region.max[w]-region.min[w])/200 || .01;
+  const cell = new Map(), key = (i,j)=>i*65536+j;
+  const NI = Math.ceil((region.max[u]-region.min[u])/cs), NJ = Math.ceil((region.max[w]-region.min[w])/cs);
+  for(let t=0;t<nT;t++){
+    const o = t*9;
+    const u0 = Math.min(T[o],T[o+3],T[o+6]), u1 = Math.max(T[o],T[o+3],T[o+6]);
+    const w0 = Math.min(T[o+1],T[o+4],T[o+7]), w1 = Math.max(T[o+1],T[o+4],T[o+7]);
+    // solo las celdas dentro de la zona: un triángulo enorme (chapa lateral lisa) también cuenta
+    const i0 = Math.max(0, Math.floor((u0-region.min[u])/cs)), i1 = Math.min(NI, Math.floor((u1-region.min[u])/cs));
+    const j0 = Math.max(0, Math.floor((w0-region.min[w])/cs)), j1 = Math.min(NJ, Math.floor((w1-region.min[w])/cs));
+    for(let i=i0;i<=i1;i++) for(let j=j0;j<=j1;j++){ const k = key(i,j); let l = cell.get(k); if(!l) cell.set(k, l = []); l.push(t); }
+  }
+  return {
+    // Lanza un rayo desde p en el sentido dir (+1/-1 del eje). Devuelve la coordenada
+    // del primer impacto en ese eje, o null.
+    cast(p, dir){
+      const pu = p[u], pw = p[w], ci = Math.floor((pu-region.min[u])/cs), cj = Math.floor((pw-region.min[w])/cs);
+      if(ci < 0 || cj < 0 || ci > NI || cj > NJ) return null;
+      const l = cell.get(key(ci, cj));
+      if(!l) return null;
+      let best = null;
+      for(const t of l){
+        const o = t*9;
+        const x0=T[o],y0=T[o+1], x1=T[o+3],y1=T[o+4], x2=T[o+6],y2=T[o+7];
+        const d = (y1-y2)*(x0-x2) + (x2-x1)*(y0-y2);
+        if(Math.abs(d) < 1e-12) continue;
+        const l0 = ((y1-y2)*(pu-x2) + (x2-x1)*(pw-y2))/d, l1 = ((y2-y0)*(pu-x2) + (x0-x2)*(pw-y2))/d, l2 = 1-l0-l1;
+        if(l0 < 0 || l1 < 0 || l2 < 0) continue;
+        const h = l0*T[o+2] + l1*T[o+5] + l2*T[o+8];
+        const dist = (h - p[axis])*dir;
+        if(dist > 0 && (best===null || dist < (best-p[axis])*dir)) best = h;
+      }
+      return best;
+    }
+  };
+}
+
+// Rellena huecos (null) interpolando y suaviza una lista de valores
+function smoothList(arr, keys, passes=3){
+  const ok = arr.map(x=>!!x);
+  if(ok.filter(Boolean).length < 3) return null;
+  const first = ok.indexOf(true), last = ok.lastIndexOf(true);
+  const out = arr.slice(first, last+1);
+  for(let i=0;i<out.length;i++) if(!out[i]){
+    let j=i; while(!out[j]) j++;
+    const a = out[i-1], b = out[j];
+    for(let k=i;k<j;k++){ const f = (k-i+1)/(j-i+1); out[k] = {}; Object.keys(a).forEach(n=>out[k][n] = a[n]+(b[n]-a[n])*f); }
+  }
+  for(let p=0;p<passes;p++){
+    const prev = out.map(o=>({...o}));
+    for(let i=1;i<out.length-1;i++) keys.forEach(n=>out[i][n] = (prev[i-1][n]+2*prev[i][n]+prev[i+1][n])/4);
+  }
+  return out;
+}
+
+// Borde inferior del paragolpes (delantero o trasero) a lo ancho del coche.
+// dir = +1/-1: hacia dónde queda fuera del coche en el eje longitudinal.
+function sampleBumper(f, dir, span){
+  const {bb,S,C,L,A} = f;
+  const edge = dir>0 ? bb.max[L] : bb.min[L];
+  const region = bb.clone();
+  if(dir>0) region.min[L] = edge - S[L]*.2; else region.max[L] = edge + S[L]*.2;
+  region.max.y = bb.min.y + S.y*.5;
+  const g = rayGrid(region, L), N = 60, raw = [], p = new THREE.Vector3();
+  for(let i=0;i<=N;i++){
+    p[A] = C[A] + (i/N-.5)*S[A]*span; p[L] = edge + dir;
+    let hit = null;
+    for(let y = bb.min.y+.01; y < bb.min.y+S.y*.45; y += .005){
+      p.y = y; const h = g.cast(p, -dir);
+      if(h!==null){ if(Math.abs(h-edge) < S[L]*.1) hit = {a:p[A], y, l:h}; break; }
+    }
+    raw.push(hit);
+  }
+  // los coches son simétricos: se promedia cada lado con el otro
+  for(let i=0;i<=N/2;i++){
+    const x = raw[i], y = raw[N-i];
+    if(x && y){ const yy = (x.y+y.y)/2, ll = (x.l+y.l)/2; x.y = y.y = yy; x.l = y.l = ll; }
+    else if(x || y){ raw[i] = raw[N-i] = null; }
+  }
+  return smoothList(raw, ['y','l']);
+}
+
+// Parte baja del lateral entre los pasos de rueda, a cada lado
+function sampleSills(f){
+  const {bb,S,C,L,A} = f;
+  const sides = [];
+  [1,-1].forEach(s=>{
+    const hubs = Object.values(wheelGroups).filter(g=>g.side===s).map(g=>g.hub);
+    let l0, l1;
+    if(hubs.length >= 2){
+      const R = hubs.reduce((t,h)=>t+h.y,0)/hubs.length;
+      l0 = Math.min(...hubs.map(h=>h[L])) + R*1.2; l1 = Math.max(...hubs.map(h=>h[L])) - R*1.2;
+    } else { l0 = C[L]-S[L]*.28; l1 = C[L]+S[L]*.28; }
+    if(l1-l0 < S[L]*.15) return;
+    const region = bb.clone(); region.min[L] = l0; region.max[L] = l1; region.max.y = bb.min.y + S.y*.5;
+    if(s>0) region.min[A] = C[A]; else region.max[A] = C[A];
+    const g = rayGrid(region, A), N = 40, raw = [], p = new THREE.Vector3();
+    for(let i=0;i<=N;i++){
+      p[L] = l0 + (l1-l0)*i/N; p[A] = C[A] + s*(S[A]/2+1);
+      let hit = null;
+      for(let y = bb.min.y+.01; y < bb.min.y+S.y*.45; y += .005){
+        p.y = y; const h = g.cast(p, -s);
+        // lo de debajo del coche (escape, suelo) queda lejos del lateral
+        if(h!==null && Math.abs(h-C[A]) > S[A]*.38){ hit = {l:p[L], y, a:h}; break; }
+      }
+      raw.push(hit);
+    }
+    const list = smoothList(raw, ['y','a']);
+    if(list) sides.push({s, list});
+  });
+  return sides.length ? sides : null;
+}
+
+// Borde de cada paso de rueda, en arco alrededor del buje
+function sampleArches(f){
+  const {bb,S,C,L,A} = f;
+  const out = [];
+  Object.values(wheelGroups).forEach(g=>{
+    const h = g.hub, s = g.side, R = Math.max(h.y - bb.min.y, .15);
+    const region = bb.clone();
+    region.min[L] = h[L]-R*2; region.max[L] = h[L]+R*2; region.max.y = Math.min(bb.max.y, h.y+R*2);
+    if(s>0) region.min[A] = C[A]; else region.max[A] = C[A];
+    const grid = rayGrid(region, A), N = 40, raw = [], p = new THREE.Vector3();
+    const minLat = S[A]/2 - .14;
+    const at = (th, r)=>{
+      p[L] = h[L] + Math.cos(th)*r; p.y = h.y + Math.sin(th)*r; p[A] = C[A] + s*(S[A]/2+1);
+      const hit = p.y > bb.min.y ? grid.cast(p, -s) : null;
+      return hit!==null && Math.abs(hit-C[A]) > minLat ? hit : null;
+    };
+    for(let i=0;i<=N;i++){
+      const th = -.15 + (Math.PI+.3)*i/N;
+      let hit = null;
+      for(let r = R*1.0; r < R*1.7; r += R*.015){
+        const a = at(th, r);
+        if(a!==null){
+          // lateral de la carrocería un poco más lejos del borde (para apoyar el aletín)
+          const prof = [];
+          for(let k=0;k<=15;k++){ const ak = at(th, r+k*.01); prof.push(ak===null ? (prof[k-1] ?? a) : ak); }
+          hit = {th, r, a}; prof.forEach((v,k)=>hit['p'+k] = v);
+          break;
+        }
+      }
+      raw.push(hit);
+    }
+    const keys = ['r','a']; for(let k=0;k<=15;k++) keys.push('p'+k);
+    const list = smoothList(raw, keys);
+    if(list && list.length > 8) out.push({hub:h.clone(), s, list});
+  });
+  return out.length ? out : null;
+}
+
+// Malla barrida: cada sección es un polígono (mismo nº de puntos) y se unen en orden.
+// Aristas vivas en el perfil y suaves a lo largo del barrido.
+function sweepGeometry(secs){
+  const K = secs[0].length, pos = [], idx = [];
+  for(let k=0;k<K;k++){
+    const base = pos.length/3;
+    secs.forEach(s=>{ const a = s[k], b = s[(k+1)%K]; pos.push(a.x,a.y,a.z, b.x,b.y,b.z); });
+    for(let i=0;i<secs.length-1;i++){ const q = base+i*2; idx.push(q,q+2,q+1, q+1,q+2,q+3); }
+  }
+  [0, secs.length-1].forEach((si,e)=>{
+    const base = pos.length/3; secs[si].forEach(v=>pos.push(v.x,v.y,v.z));
+    for(let k=1;k<K-1;k++) e ? idx.push(base,base+k+1,base+k) : idx.push(base,base+k,base+k+1);
+  });
+  // que las caras miren hacia fuera: si el volumen sale negativo, se da la vuelta a todo
+  let vol = 0; const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for(let t=0;t<idx.length;t+=3){
+    a.fromArray(pos, idx[t]*3); b.fromArray(pos, idx[t+1]*3); c.fromArray(pos, idx[t+2]*3);
+    vol += a.dot(b.cross(c));
+  }
+  if(vol < 0) for(let t=0;t<idx.length;t+=3){ const x = idx[t+1]; idx[t+1] = idx[t+2]; idx[t+2] = x; }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+// Estrecha la pieza en los extremos (0..1 → factor)
+const taper = (i, n, frac=.1, min=.25)=>{ const t = Math.min(i, n-1-i)/((n-1)*frac); return t >= 1 ? 1 : min + (1-min)*t; };
+
+// Perfil de "cuchilla" (labio, faldón): sale hacia fuera y cae, más fina en la punta
+function bladeSection(pt, outAxis, o, base, p){
+  const depth = p.depth/1000, drop = p.drop/1000, th = p.thick/1000;
+  return [
+    [-.04, .004], [depth, -drop], [depth, -drop-th*.45], [-.04, -th]
+  ].map(([d,y])=>{ const v = pt.clone(); v[outAxis] = base + o*d; v.y += y; return v; });
+}
+
+const GEN_SAMPLE = {
+  lip: f=>sampleBumper(f, f.F, .96),
+  diffuser: f=>sampleBumper(f, f.rs, .72),
+  skirts: sampleSills,
+  fenders: sampleArches
+};
+const GEN_BUILD = {
+  lip(s, p, f){
+    const secs = s.map((q,i)=>{
+      const pt = new THREE.Vector3(); pt[f.A] = q.a; pt.y = q.y;
+      const k = taper(i, s.length);
+      return bladeSection(pt, f.L, f.F, q.l, {...p, depth:p.depth*k});
+    });
+    return [sweepGeometry(secs)];
+  },
+  skirts(sides, p, f){
+    return sides.map(({s, list})=>sweepGeometry(list.map((q,i)=>{
+      const pt = new THREE.Vector3(); pt[f.L] = q.l; pt.y = q.y;
+      return bladeSection(pt, f.A, s, q.a, {...p, depth:p.depth*taper(i, list.length, .12, .35)});
+    })));
+  },
+  diffuser(s, p, f){
+    const L = f.L, A = f.A, o = f.rs, len = p.len/1000, tan = Math.tan(THREE.MathUtils.degToRad(p.angle)), t = .01;
+    const pt = (a, l, y)=>{ const v = new THREE.Vector3(); v[A] = a; v[L] = l; v.y = y; return v; };
+    // placa: a ras del borde del paragolpes y bajando hacia dentro
+    const geos = [sweepGeometry(s.map(q=>{
+      const lo = q.l + o*.01, yo = q.y - .004, li = q.l - o*len, yi = yo - len*tan;
+      return [pt(q.a,li,yi), pt(q.a,lo,yo), pt(q.a,lo,yo-t), pt(q.a,li,yi-t)];
+    }))];
+    // aletas verticales: triángulo entre la placa y el plano del suelo
+    const n = Math.round(p.fins), a0 = s[0].a, a1 = s[s.length-1].a;
+    if(tan > .005) for(let k=0;k<n;k++){
+      const a = a0 + (a1-a0)*(k+1)/(n+1);
+      const q = s.reduce((best,x)=>Math.abs(x.a-a) < Math.abs(best.a-a) ? x : best);
+      const lo = q.l + o*.005, yo = q.y - .004 - t, li = q.l - o*len, yi = q.y - .004 - len*tan - t;
+      const tri = aa=>[pt(aa,li,yi), pt(aa,lo,yo), pt(aa,lo,yi)];
+      geos.push(sweepGeometry([tri(a-.004), tri(a+.004)]));
+    }
+    return geos;
+  },
+  fenders(arches, p, f){
+    const L = f.L, A = f.A, width = p.width/1000, band = p.band/1000, th = p.thick/1000;
+    return arches.map(({hub, s, list})=>sweepGeometry(list.map((q,i)=>{
+      const k = taper(i, list.length, .15, .3);
+      const pt = (r, a)=>{ const v = new THREE.Vector3(); v[L] = hub[L] + Math.cos(q.th)*r; v.y = hub.y + Math.sin(q.th)*r; v[A] = a; return v; };
+      const bi = Math.min(15, Math.round(band/.01)), ab = q['p'+bi];
+      return [
+        pt(q.r + band, ab - s*.002),              // apoyo en la carrocería
+        pt(q.r - .005, q.a + s*width*k),          // borde exterior del aletín
+        pt(q.r - .005, q.a + s*(width*k - th)),
+        pt(q.r + th*2, q.a - s*.01)               // dentro del paso de rueda
+      ];
+    })));
+  }
+};
+
+function genDefaults(type){ const p = {}; Object.entries(GEN[type].p).forEach(([k,v])=>p[k] = v[3]); return p; }
+function createGen(type, params){
+  if(!root) return null;
+  const def = GEN[type], f = carFrame();
+  if(!f){ flash('No hay carrocería reconocida en este modelo'); return null; }
+  const t0 = performance.now();
+  const s = GEN_SAMPLE[type](f);
+  console.log(`${def.name}: medido en ${Math.round(performance.now()-t0)} ms`);
+  if(!s){
+    flash(type==='fenders' || type==='skirts'
+      ? 'No se ha podido medir: revisa que las ruedas estén bien reconocidas (Piezas del modelo)'
+      : 'No se ha encontrado el borde del paragolpes');
+    return null;
+  }
+  const obj = new THREE.Group();
+  obj.userData = {addon:'part', name:def.name+' a medida', category:def.cat, paint:def.paint, hid:[],
+                  gen:{type, p:{...genDefaults(type), ...params}, s, f}};
+  buildGen(obj);
+  addonRoot.add(obj); selectAddon(obj); buildAddonList(); openCat('addons');
+  flash(`Pieza generada: ${def.name}. Ajusta el tamaño con los controles.`);
+  return obj;
+}
+function buildGen(obj){
+  const g = obj.userData.gen;
+  [...obj.children].forEach(c=>obj.remove(c));
+  const geos = GEN_BUILD[g.type](g.s, g.p, g.f);
+  if(!g.pivot){
+    // el objeto se coloca en el centro de la pieza para que mover y girar sean cómodos
+    const b = new THREE.Box3();
+    geos.forEach(x=>{ x.computeBoundingBox(); b.union(x.boundingBox); });
+    g.pivot = b.getCenter(new THREE.Vector3()); obj.position.copy(g.pivot);
+  }
+  geos.forEach(x=>{
+    x.translate(-g.pivot.x, -g.pivot.y, -g.pivot.z);
+    const m = new THREE.Mesh(x, genMat); m.castShadow = m.receiveShadow = true; m.userData.origMat = genMat;
+    obj.add(m);
+  });
+  paintAddon(obj, obj.userData.paint);
+}
+function buildGenTools(obj){
+  const box = $('genTools'); box.innerHTML = '';
+  const g = obj && obj.userData.gen; if(!g) return;
+  Object.entries(GEN[g.type].p).forEach(([k,[label,min,max]])=>{
+    const unit = k==='angle' ? '°' : k==='fins' ? '' : ' mm';
+    const lab = document.createElement('label'); lab.className = 'sl';
+    const val = document.createElement('b'); val.textContent = g.p[k]+unit;
+    lab.append(label+' ', val);
+    const r = document.createElement('input'); r.type = 'range'; r.min = min; r.max = max; r.value = g.p[k];
+    r.oninput = ()=>{ g.p[k] = +r.value; val.textContent = g.p[k]+unit; buildGen(obj); };
+    box.append(lab, r);
+  });
+}
+document.querySelectorAll('[data-gen]').forEach(b=>b.onclick=()=>{
+  flash('Midiendo la carrocería…');
+  setTimeout(()=>createGen(b.dataset.gen), 30);   // deja pintar el aviso antes del cálculo
+});
+
+// =====================================================================
+//  Calidad del modelo para personalizar
+// =====================================================================
+function updateQuality(){
+  const el = $('quality'); if(!el) return;
+  const base = baseMeshes();
+  if(!base.length){ el.innerHTML = ''; return; }
+  let tot = 0, ok = 0;
+  base.forEach(m=>{
+    const g = m.geometry, n = (g.index ? g.index.count : g.attributes.position.count)/3;
+    tot += n; if(m.userData.role!=='other') ok += n;
+  });
+  const has = r=>base.some(m=>m.userData.role===r);
+  const wheels = Math.min(4, Object.keys(wheelGroups).length);
+  const pct = tot ? ok/tot : 0;
+  const score = Math.round(pct*55 + wheels/4*25 + (has('body')?12:0) + (has('glass')?8:0));
+  const txt = score >= 75 ? 'buena' : score >= 45 ? 'regular' : 'difícil';
+  const chk = (b,t)=>`${b?'✓':'✗'} ${t}`;
+  el.innerHTML = '';
+  const bar = document.createElement('span'); bar.className = 'qbar';
+  const fill = document.createElement('i'); fill.style.width = score+'%'; bar.append(fill);
+  const t = document.createElement('span');
+  t.textContent = `Calidad ${txt} (${score} %) · ${Math.round(pct*100)} % reconocido · ${chk(wheels===4, wheels+' ruedas')} · ${chk(has('body'),'carrocería')} · ${chk(has('glass'),'lunas')}`;
+  el.title = 'Porcentaje de triángulos con un rol asignado, ruedas agrupadas por esquina, carrocería y lunas detectadas. Cuanto más alto, mejor funcionan pintura, stance y piezas a medida.';
+  el.append(bar, t);
+}
+
+// =====================================================================
+//  Builds: guardar y recuperar el coche con todas sus modificaciones
+// =====================================================================
+let currentBuild = null;
+function syncUI(){
+  EDITABLE.forEach(setFinish); setGlass(); setChrome(); buildEditor();
+  $('low').value = state.low; $('lowV').textContent = state.low+' mm';
+  $('cam').value = state.camber; $('camV').textContent = state.camber.toFixed(1).replace('.',',')+'°';
+  $('sp').value = state.spacer; $('spV').textContent = state.spacer+' mm';
+  $('tint').value = state.tint; $('tintV').textContent = state.tint+' %';
+  $('chromeDel').setAttribute('aria-pressed', state.chromeDel);
+  $('rim').value = wheelState.rimIn; $('rimV').textContent = wheelState.rimIn+'"';
+}
+function snapshot(){
+  const had = tcontrols.object; tcontrols.detach(); selHelper.visible = false;
+  renderer.render(scene, camera);
+  const src = renderer.domElement, cv = document.createElement('canvas'); cv.width = 400; cv.height = 250;
+  const k = Math.max(cv.width/src.width, cv.height/src.height), w = src.width*k, h = src.height*k;
+  cv.getContext('2d').drawImage(src, (cv.width-w)/2, (cv.height-h)/2, w, h);
+  if(had) tcontrols.attach(had); refreshSel();
+  return cv.toDataURL('image/jpeg', .8);
+}
+async function saveBuild(){
+  if(!root){ flash('No hay coche cargado'); return; }
+  const carName = currentCar ? currentCar.name : 'Coche de prueba';
+  let name = prompt('Nombre del build', currentBuild ? currentBuild.name : `${carName} · mi build`);
+  if(name===null) return;
+  if(!name.trim()) name = `${carName} · mi build`;
+  const build = {
+    v:1, name, carName, date:new Date().toISOString(), thumb:snapshot(),
+    id: currentBuild && currentBuild.name===name ? currentBuild.id : undefined,
+    car: currentCar, state: JSON.parse(JSON.stringify(state)), ops,
+    wheels: wheelState.meta ? {meta:wheelState.meta, rimIn:wheelState.rimIn, flip:wheelState.flip} : null,
+    addons: addonRoot.children.map(o=>({
+      cat:o.userData.category, name:o.userData.name, paint:o.userData.paint,
+      meta:o.userData.meta || null, gen:o.userData.gen ? {type:o.userData.gen.type, p:o.userData.gen.p} : null,
+      pos:o.position.toArray(), quat:o.quaternion.toArray(), scale:o.scale.toArray(),
+      hid:meshIds(o.userData.hid||[])
+    }))
+  };
+  try{
+    const r = await fetch('/api/builds', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(build)});
+    const j = await r.json(); if(!r.ok) throw new Error(j.detail || 'Error al guardar');
+    currentBuild = {id:j.id, name};
+    flash(`Build guardado: ${name}`); refreshBuilds();
+  }catch(e){ flash('No se pudo guardar el build: '+e.message); console.error(e); }
+}
+// pieza de la biblioteca (entera o una del pack)
+async function partSource(meta, cat){
+  let src = packCache.get(meta.uid);
+  if(!src){ src = await loadGLTF(meta.file); packCache.set(meta.uid, src); }
+  if(meta.packIndex!=null){ const list = splitPack(src, cat); if(list[meta.packIndex]) return list[meta.packIndex].clone(true); }
+  return src.clone(true);
+}
+async function loadBuild(id){
+  flash('Cargando build…');
+  try{
+    const r = await fetch(`/api/builds/${id}`); const b = await r.json();
+    if(!r.ok) throw new Error(b.detail || 'No encontrado');
+    if(b.car) await loadURL(b.car);
+    else { currentCar = null; demoCar(); setCredit(null); setCarName('Coche de prueba',''); }
+    // repetir lo que se le hizo al modelo
+    replaying = true;
+    try{
+      for(const op of b.ops||[]){
+        if(op.op==='role'){ selection.clear(); meshesById(op.ids).forEach(m=>selection.add(m)); if(selection.size) assignSel(op.role); }
+        else if(op.op==='cut') cutWithBox(new THREE.Box3(new THREE.Vector3().fromArray(op.min), new THREE.Vector3().fromArray(op.max)));
+        else if(op.op==='islands') islandsOf(meshesById(op.ids));
+        else if(op.op==='tires') autoTires();
+        else if(op.op==='colors') classifyWheelsByColor();
+      }
+    } finally { replaying = false; }
+    ops = (b.ops||[]).slice();
+    selectMesh(null);
+    ['body','wheels','calipers'].forEach(k=>{ if(b.state[k]) Object.assign(state[k], b.state[k]); });
+    ['low','camber','spacer','tint','chromeDel'].forEach(k=>{ if(k in b.state) state[k] = b.state[k]; });
+    if(b.wheels){
+      wheelState.rimIn = b.wheels.rimIn;
+      mountWheels(await partSource(b.wheels.meta, 'wheels'), b.wheels.meta);
+      if(b.wheels.flip){ wheelState.flip = true; buildRims(); }
+    }
+    syncUI(); applyLow();
+    for(const a of b.addons||[]){
+      let obj = null;
+      try{
+        obj = a.gen ? createGen(a.gen.type, a.gen.p) : a.meta ? mountAddon(await partSource(a.meta, a.cat), a.meta, a.cat) : null;
+      }catch(e){ console.error(e); }
+      if(!obj) continue;
+      obj.position.fromArray(a.pos); obj.quaternion.fromArray(a.quat); obj.scale.fromArray(a.scale);
+      paintAddon(obj, a.paint);
+      obj.userData.hid.forEach(m=>m.visible = true);
+      obj.userData.hid = meshesById(a.hid||[]); obj.userData.hid.forEach(m=>m.visible = false);
+    }
+    selectAddon(null); buildAddonList(); buildMeshList();
+    currentBuild = {id:b.id, name:b.name};
+    setCarName(b.name, b.carName + (b.car ? ` · por ${b.car.author}` : ''));
+    flash(`Build cargado: ${b.name}`);
+  }catch(e){ replaying = false; flash('No se pudo cargar el build: '+e.message); console.error(e); }
+}
+async function refreshBuilds(){
+  const box = $('buildList');
+  try{
+    const list = await (await fetch('/api/builds')).json();
+    box.innerHTML = '';
+    if(!list.length){ box.innerHTML = '<small class="sub">Aún no has guardado ningún build</small>'; return; }
+    list.forEach(b=>{
+      const c = card({name:b.name, author:b.carName, thumb:b.thumb}, ()=>loadBuild(b.id));
+      const wrap = document.createElement('div'); wrap.className = 'bcard';
+      const del = document.createElement('button'); del.className = 'del'; del.textContent = '×';
+      del.title = 'Borrar build'; del.setAttribute('aria-label', `Borrar ${b.name}`);
+      del.onclick = async ()=>{ if(!confirm(`¿Borrar "${b.name}"?`)) return;
+        await fetch(`/api/builds/${b.id}`, {method:'DELETE'}); if(currentBuild && currentBuild.id===b.id) currentBuild = null; refreshBuilds(); };
+      wrap.append(c, del); box.append(wrap);
+    });
+  }catch(e){ box.innerHTML = ''; }
+}
+$('saveBuild').onclick = saveBuild;
+refreshBuilds();
 
 buildEditor(); demoCar(); resize();
 (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();

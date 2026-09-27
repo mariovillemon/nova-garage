@@ -21,6 +21,7 @@ uvicorn main:app --reload   # http://localhost:8000
   - `GET /api/models/{uid}`: metadatos si está en caché, 404 si no.
   - `POST /api/models/{uid}/store?meta=…`: recibe el ZIP glTF descargado por el navegador y lo descomprime en `cache/{uid}/`.
   - `POST /api/parts/store?meta=…`: guarda un GLB generado en el navegador (piezas extraídas); `POST /api/parts/{uid}/thumb`: su miniatura PNG.
+  - `GET/POST /api/builds`, `GET/DELETE /api/builds/{id}`: builds guardados en `cache/builds/{id}.json`.
   - `GET /api/cache`: todo lo descargado. `meta.kind` = `car` | `part`; las piezas llevan `category`.
   - `/files/…` sirve `cache/`.
   - `GET /api/search`: búsqueda de respaldo (casi nunca funciona, ver abajo).
@@ -57,14 +58,20 @@ uvicorn main:app --reload   # http://localhost:8000
   "Guardar como pieza" exporta la selección con GLTFExporter en coordenadas del coche
   (`meta.extracted = true`) para que en el mismo modelo caiga en su sitio.
 
+- Piezas a medida (`GEN`, `GEN_SAMPLE`, `GEN_BUILD`): labio, faldones, difusor y aletines.
+  Se mide la carrocería con rayos paralelos a un eje sobre `rayGrid` (rejilla 2D de triángulos
+  en coordenadas `origWorld`, sin rebajar = coordenadas de `addonRoot`); el raycaster de three
+  es demasiado lento para modelos grandes. La forma se construye con `sweepGeometry` (secciones
+  barridas). Las mediciones se guardan en `userData.gen` y los controles solo reconstruyen.
+- Builds: `ops` registra lo que se hace al modelo (roles, recortes, trozos, neumáticos, colores),
+  identificando las piezas por su índice en `baseMeshes()`. Al cargar un build se repiten las
+  operaciones en orden (`replaying = true`), luego estado, llantas y piezas con su transformación.
+  Las piezas de un pack guardan `packIndex`.
+- `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
+
 ## Pendiente (por prioridad)
-1. **Piezas generadas desde la forma del coche** (labio delantero, faldones, difusor,
-   aletines/overfenders) usando raycast sobre la carrocería, con controles de tamaño.
-2. **Guardar builds**: coche + colores + acabados + stance + llantas + piezas añadidas
-   (posición) + piezas ocultas/recortadas. Hoy se pierde todo al cambiar de coche.
-3. Indicador de "calidad para personalizar" al cargar un modelo (% de piezas reconocidas).
-4. Catálogo de mods reales vía **eBay Browse API** (filtro de compatibilidad por vehículo).
-5. Versión Flutter.
+1. Catálogo de mods reales vía **eBay Browse API** (filtro de compatibilidad por vehículo).
+2. Versión Flutter.
 
 ## Cómo trabajar
 - Mario prueba en Windows con Chrome; valida los cambios él mismo y manda capturas.
