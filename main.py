@@ -269,6 +269,94 @@ def delete_build(bid: str, request: Request):
     return {"ok": True}
 
 
+# ---------- catálogo de piezas reales: eBay Browse API ----------
+# Claves en .env (https://developer.ebay.com → Application Keys, entorno Production).
+EBAY_ID = os.getenv("EBAY_CLIENT_ID", "").strip()
+EBAY_SECRET = os.getenv("EBAY_CLIENT_SECRET", "").strip()
+EBAY_MARKET = os.getenv("EBAY_MARKETPLACE", "EBAY_ES").strip() or "EBAY_ES"
+EBAY_API = "https://api.ebay.com"
+# Categoría "piezas de coche" de cada mercado: el filtro de compatibilidad solo funciona dentro de ella
+EBAY_PARTS_CAT = {"EBAY_US": "6030", "EBAY_GB": "9800", "EBAY_DE": "9800", "EBAY_ES": "9886",
+                  "EBAY_FR": "9886", "EBAY_IT": "9886"}
+_ebay_token = {"value": None, "exp": 0.0}
+
+
+async def ebay_token() -> str:
+    """Token de aplicación (client credentials). Dura 2 h; se renueva antes de caducar."""
+    import base64
+    import time
+    if _ebay_token["value"] and time.time() < _ebay_token["exp"] - 120:
+        return _ebay_token["value"]
+    auth = base64.b64encode(f"{EBAY_ID}:{EBAY_SECRET}".encode()).decode()
+    r = await client.post(
+        f"{EBAY_API}/identity/v1/oauth2/token",
+        headers={"Authorization": f"Basic {auth}", "Content-Type": "application/x-www-form-urlencoded"},
+        data={"grant_type": "client_credentials", "scope": "https://api.ebay.com/oauth/api_scope"},
+    )
+    if r.status_code != 200:
+        print("eBay token:", r.status_code, r.text[:300])
+        raise HTTPException(502, "eBay no ha aceptado las claves (revisa EBAY_CLIENT_ID y EBAY_CLIENT_SECRET)")
+    j = r.json()
+    _ebay_token.update(value=j["access_token"], exp=time.time() + int(j.get("expires_in", 7200)))
+    return _ebay_token["value"]
+
+
+def ebay_item(it: dict) -> dict:
+    price = it.get("price") or {}
+    img = (it.get("image") or {}).get("imageUrl") or next(
+        (x.get("imageUrl") for x in it.get("thumbnailImages") or [] if x.get("imageUrl")), None)
+    return {
+        "id": it.get("itemId"),
+        "title": it.get("title"),
+        "price": price.get("value"),
+        "currency": price.get("currency"),
+        "image": img,
+        "url": it.get("itemWebUrl"),
+        "condition": it.get("condition"),
+        "seller": (it.get("seller") or {}).get("username"),
+        "compatible": (it.get("compatibilityMatch") or "") in ("EXACT", "POSSIBLE"),
+    }
+
+
+@app.get("/api/ebay/status")
+def ebay_status():
+    return {"configured": bool(EBAY_ID and EBAY_SECRET), "marketplace": EBAY_MARKET}
+
+
+@app.get("/api/ebay/search")
+async def ebay_search(q: str = Query(..., min_length=1), year: str = "", make: str = "", model: str = "",
+                      offset: int = 0):
+    """Busca piezas. Con año/marca/modelo intenta primero el filtro de compatibilidad de eBay;
+    si el mercado no lo admite o no hay resultados, busca por texto con el coche en la consulta."""
+    if not (EBAY_ID and EBAY_SECRET):
+        raise HTTPException(503, "Faltan EBAY_CLIENT_ID y EBAY_CLIENT_SECRET en el archivo .env")
+    token = await ebay_token()
+    headers = {"Authorization": f"Bearer {token}", "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKET}
+    base = {"limit": 24, "offset": max(0, offset)}
+
+    async def run(params: dict):
+        r = await client.get(f"{EBAY_API}/buy/browse/v1/item_summary/search", params={**base, **params}, headers=headers)
+        if r.status_code != 200:
+            print("eBay search:", r.status_code, r.text[:300])
+            return None
+        return r.json()
+
+    compat = [f"Year:{year}" if year else "", f"Make:{make}" if make else "", f"Model:{model}" if model else ""]
+    compat = ";".join(x for x in compat if x)
+    data, used = None, False
+    if compat and EBAY_MARKET in EBAY_PARTS_CAT:
+        data = await run({"q": q, "category_ids": EBAY_PARTS_CAT[EBAY_MARKET], "compatibility_filter": compat})
+        used = bool(data and data.get("itemSummaries"))
+    if not used:
+        car = " ".join(x for x in (make, model) if x)
+        data = await run({"q": f"{q} {car}".strip()})
+    if data is None:
+        raise HTTPException(502, "eBay no ha respondido a la búsqueda")
+    items = [ebay_item(it) for it in data.get("itemSummaries") or []]
+    return {"results": items, "total": data.get("total", len(items)), "compat": used,
+            "next": offset + len(items) if data.get("next") else None}
+
+
 app.mount("/files", StaticFiles(directory=CACHE), name="files")
 
 

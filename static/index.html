@@ -323,6 +323,27 @@ button:disabled{opacity:.45;cursor:default}
     </div>
   </details>
 
+  <details class="cat" data-cat="shop">
+    <summary>Tienda: piezas reales</summary>
+    <div class="catbody">
+      <p class="sub" id="shopHint">Comprobando eBay…</p>
+      <div id="shopBox" hidden>
+        <div class="row">
+          <input id="vYear" type="search" placeholder="Año" aria-label="Año del coche" style="max-width:74px;flex:none">
+          <input id="vMake" type="search" placeholder="Marca" aria-label="Marca">
+          <input id="vModel" type="search" placeholder="Modelo" aria-label="Modelo">
+        </div>
+        <div class="row" id="shopCats" style="margin-top:10px"></div>
+        <div class="row" style="margin-top:8px">
+          <input id="shopQ" type="search" placeholder="Busca cualquier pieza…" aria-label="Buscar pieza en eBay">
+          <button class="primary" id="shopGo">Buscar</button>
+        </div>
+        <div id="shopResults" class="grid"></div>
+        <button id="shopMore" hidden style="margin-top:10px;width:100%">Cargar más</button>
+      </div>
+    </div>
+  </details>
+
   <details class="cat" data-cat="photo">
     <summary>Escenario y foto</summary>
     <div class="catbody">
@@ -434,7 +455,8 @@ function defaultState(){ return {
   wheels:{color:'#3a3d42',finish:'Metalizado'},
   calipers:{color:'#c1121f',finish:'Brillo'},
   low:0, camber:0, spacer:0, tint:20, chromeDel:false,
-  rake:0, scene:'estudio', lightsOn:false, tailSmoke:false
+  rake:0, scene:'estudio', lightsOn:false, tailSmoke:false,
+  vehicle:{year:'', make:'', model:''}
 }; }
 const state = defaultState();
 
@@ -1152,7 +1174,8 @@ function loadURL(meta){
   flash('Cargando modelo…');
   openDrawer(false);
   return new Promise((res,rej)=>loader.load(meta.file,
-    g=>{ loadObject(g.scene, meta.name); setCredit(meta); setCarName(meta.name, `por ${meta.author}`); res(); },
+    g=>{ loadObject(g.scene, meta.name); setCredit(meta); setCarName(meta.name, `por ${meta.author}`);
+         state.vehicle = guessVehicle(meta.name); shopSetVehicle(state.vehicle); res(); },
     e=>{ if(e.lengthComputable) flash(`Cargando… ${Math.round(e.loaded/e.total*100)} %`); },
     e=>{ flash('No se pudo cargar el modelo descargado'); rej(e); }));
 }
@@ -2629,7 +2652,7 @@ async function applyBuild(b, reload=true){
     mountWheels(await partSource(b.wheels.meta, 'wheels'), b.wheels.meta);
     if(b.wheels.flip){ wheelState.flip = true; buildRims(); }
   }
-  syncUI(); applyLow(); refreshLamps(); applyScene(state.scene);
+  syncUI(); applyLow(); refreshLamps(); applyScene(state.scene); shopSetVehicle(state.vehicle);
   for(const a of b.addons||[]){
     let obj = null;
     try{
@@ -3497,6 +3520,70 @@ document.querySelectorAll('[data-tone]').forEach(b=>b.onclick=()=>{
   addVinyl({type:'tone', zone:b.dataset.tone, carbon, color: carbon ? '#111111' : '#0d0f13', p:{}});
   flash(carbon ? `${WRAP_ZONES[b.dataset.tone].label} de carbono. Ajusta dónde empieza y acaba.` : 'Techo en otro color. Elige el color y ajusta el tramo.');
 });
+// =====================================================================
+//  Tienda: piezas reales en eBay, filtradas por compatibilidad con el coche
+// =====================================================================
+const MAKES = ['Alfa Romeo','Aston Martin','Audi','BMW','Chevrolet','Citroën','Citroen','Cupra','Dacia','Dodge','Ferrari','Fiat','Ford',
+  'Honda','Hyundai','Infiniti','Jaguar','Jeep','Kia','Lamborghini','Lancia','Land Rover','Lexus','Lotus','Maserati','Mazda','McLaren',
+  'Mercedes-Benz','Mercedes','Mini','Mitsubishi','Nissan','Opel','Peugeot','Porsche','Renault','Seat','Skoda','Smart','Subaru','Suzuki',
+  'Tesla','Toyota','Volkswagen','VW','Volvo'];
+// "2002 Toyota Celica GT-S (low poly)" → {year:'2002', make:'Toyota', model:'Celica'}
+function guessVehicle(name){
+  const n = (name||'').replace(/[_\-]+/g,' '), year = (n.match(/\b(19[5-9]\d|20[0-4]\d)\b/)||[])[1] || '';
+  const make = MAKES.find(m=>new RegExp(`\\b${m.replace(/[-\s]/g,'[-\\s]?')}\\b`,'i').test(n)) || '';
+  let model = '';
+  if(make){ const after = n.split(new RegExp(make.replace(/[-\s]/g,'[-\\s]?'),'i'))[1] || ''; model = (after.match(/[A-Za-z0-9]+/)||[''])[0]; }
+  if(/^\d{4}$/.test(model)) model = '';
+  return {year, make: make==='VW' ? 'Volkswagen' : make==='Mercedes' ? 'Mercedes-Benz' : make.replace('Citroen','Citroën'), model};
+}
+const SHOP_CATS = [['Alerón','alerón'],['Llantas','llantas'],['Escape','escape deportivo'],['Suspensión','coilovers suspensión'],
+  ['Labio / splitter','labio splitter paragolpes'],['Faldones','taloneras faldones'],['Faros','faros delanteros'],['Pilotos','pilotos traseros']];
+let shop = {q:'', next:null, ready:false};
+function shopVehicle(){ return {year:$('vYear').value.trim(), make:$('vMake').value.trim(), model:$('vModel').value.trim()}; }
+function shopSetVehicle(v){ $('vYear').value = v.year||''; $('vMake').value = v.make||''; $('vModel').value = v.model||''; }
+async function shopStatus(){
+  try{
+    const j = await (await fetch('/api/ebay/status')).json(); shop.ready = j.configured;
+    $('shopHint').textContent = j.configured
+      ? `Mercado ${j.marketplace.replace('EBAY_','eBay ')}. Con año, marca y modelo se buscan piezas compatibles con tu coche.`
+      : 'Para ver piezas reales falta poner tus claves de eBay en el archivo .env (EBAY_CLIENT_ID y EBAY_CLIENT_SECRET) y reiniciar el servidor.';
+    $('shopBox').hidden = !j.configured;
+  }catch(e){}
+}
+function shopCard(it){
+  const a = document.createElement('a'); a.className = 'card'; a.href = it.url; a.target = '_blank'; a.rel = 'noopener';
+  a.style.textDecoration = 'none'; a.style.color = 'inherit'; a.style.border = '1px solid var(--line)'; a.style.borderRadius = '6px';
+  if(it.image){ const i = new Image(); i.src = it.image; i.alt = ''; i.loading = 'lazy'; i.style.objectFit = 'contain'; i.style.background = '#fff'; a.append(i); }
+  const d = document.createElement('div'), t = document.createElement('b'), sm = document.createElement('small');
+  t.textContent = it.title; t.title = it.title;
+  const price = it.price ? Number(it.price).toLocaleString('es-ES',{style:'currency', currency:it.currency||'EUR'}) : '';
+  sm.textContent = [price, it.condition, it.compatible ? '✓ compatible' : ''].filter(Boolean).join(' · ');
+  d.append(t, sm); a.append(d); return a;
+}
+async function shopSearch(more){
+  const q = more ? shop.q : $('shopQ').value.trim(); if(!q) return;
+  shop.q = q; if(!more){ $('shopResults').innerHTML = ''; shop.next = null; }
+  const v = shopVehicle(), p = new URLSearchParams({q, ...v});
+  if(more && shop.next) p.set('offset', shop.next);
+  flash('Buscando en eBay…');
+  try{
+    const r = await fetch('/api/ebay/search?'+p), j = await r.json();
+    if(!r.ok) throw new Error(j.detail || 'Error en la búsqueda');
+    j.results.forEach(it=>$('shopResults').append(shopCard(it)));
+    shop.next = j.next; $('shopMore').hidden = !j.next;
+    const car = [v.make, v.model, v.year].filter(Boolean).join(' ');
+    flash(!j.results.length ? 'Sin resultados' : j.compat ? `${j.total} piezas compatibles con ${car}` : `${j.results.length} resultados${car ? ' (búsqueda por texto: eBay no filtra compatibilidad para este coche o mercado)' : ''}`);
+  }catch(e){ flash(e.message); }
+}
+SHOP_CATS.forEach(([label,q])=>{
+  const b = document.createElement('button'); b.textContent = label;
+  b.onclick = ()=>{ $('shopQ').value = q; shopSearch(false); }; $('shopCats').append(b);
+});
+$('shopGo').onclick = ()=>shopSearch(false);
+$('shopQ').onkeydown = e=>{ if(e.key==='Enter') shopSearch(false); };
+$('shopMore').onclick = ()=>shopSearch(true);
+['vYear','vMake','vModel'].forEach(id=>$(id).onchange = ()=>{ state.vehicle = shopVehicle(); });
+shopStatus();
 
 buildEditor(); demoCar(); resize(); applyScene('estudio'); histReset();
 (function loop(){ requestAnimationFrame(loop); controls.update(); renderFrame(); })();

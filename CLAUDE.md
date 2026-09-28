@@ -24,6 +24,10 @@ uvicorn main:app --reload   # http://localhost:8000
   - `GET/POST /api/builds`, `GET/DELETE /api/builds/{id}`: builds guardados en `cache/builds/{id}.json`.
   - `GET /api/cache`: todo lo descargado. `meta.kind` = `car` | `part`; las piezas llevan `category`.
   - `/files/…` sirve `cache/`.
+  - `GET /api/ebay/status`, `GET /api/ebay/search?q&year&make&model&offset`: catálogo de piezas
+    reales (Browse API, token de aplicación cacheado). Primero con `compatibility_filter` en la
+    categoría de recambios del mercado; si no da resultados, búsqueda por texto con el coche.
+    Claves `EBAY_CLIENT_ID`/`EBAY_CLIENT_SECRET` y `EBAY_MARKETPLACE` en `.env`.
   - `GET /api/search`: búsqueda de respaldo (casi nunca funciona, ver abajo).
 - `static/index.html` — todo el frontend en un único archivo (HTML + CSS + JS).
   three.js **r147** por CDN (jsdelivr, builds UMD de `examples/js`): OrbitControls,
@@ -102,11 +106,12 @@ uvicorn main:app --reload   # http://localhost:8000
   En salas cerradas se limita la distancia y el ángulo de cámara (`maxDist`, `minPolar`).
 - Faros: el color se decide por píxel en el sombreador (`lampMaterial`, uniforms `lampU`):
   delante blanco, detrás rojo, aunque todas las luces vayan en una sola pieza.
+- Tienda (`shopSearch`): año/marca/modelo en `state.vehicle`, deducidos del nombre del coche con
+  `guessVehicle` al cargarlo y editables; va en el build.
 - `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
 
 ## Pendiente (por prioridad)
-1. Catálogo de mods reales vía **eBay Browse API** (filtro de compatibilidad por vehículo).
-2. Versión Flutter.
+1. Versión Flutter.
 
 ## Cómo trabajar
 - Mario prueba en Windows con Chrome; valida los cambios él mismo y manda capturas.
