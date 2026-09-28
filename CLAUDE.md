@@ -85,6 +85,17 @@ uvicorn main:app --reload   # http://localhost:8000
   trasera) es un vinilo `wrap` con su recorte, giro en pasos de 90° y espejo, proyectado desde su
   lado sobre toda la zona. Capó/techo/maletero ocupan un tramo del largo ajustable. Las imágenes
   con marcas de terceros son del usuario: no se suben al repo.
+- Builds: `buildData()` define el build; `applyBuild(b, reload)` lo aplica (con `reload` recarga el
+  coche y repite `ops`; sin él solo rehace estado, llantas, piezas y vinilos). Lo usan cargar,
+  importar y deshacer. Exportar mete dentro del JSON las piezas propias (`extracted`/`local`) en
+  base64; al importar se suben de nuevo. Coches y piezas de Sketchfab que falten se descargan solos.
+- Deshacer/rehacer (`hist`): foto de `buildData()` tras cada clic/cambio y cada 1,2 s si cambió.
+- Antes/después (`renderCompare`): dos pasadas con scissor; la de serie pone cada malla en
+  `origWorld` con su material original y oculta piezas añadidas y vinilos.
+- Escenarios (`SCENES`, `applyScene`), captura al doble de resolución (`capture`), faros
+  (`lampMaterial` en `applyRole` + focos en `lampGroup`), rake (`rakeMatrix` en `applyLow`, gira
+  carrocería, `addonRoot` y `vinylRoot`), extras de llanta (`wheelExtra`: ancho, offset, labio y
+  letras como anillos hijos del neumático), pintura por zonas (vinilo `tone`: color o carbono).
 - `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
 
 ## Pendiente (por prioridad)
