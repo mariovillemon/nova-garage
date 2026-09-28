@@ -96,6 +96,12 @@ uvicorn main:app --reload   # http://localhost:8000
   (`lampMaterial` en `applyRole` + focos en `lampGroup`), rake (`rakeMatrix` en `applyLow`, gira
   carrocería, `addonRoot` y `vinylRoot`), extras de llanta (`wheelExtra`: ancho, offset, labio y
   letras como anillos hijos del neumático), pintura por zonas (vinilo `tone`: color o carbono).
+- Escenarios 3D (`SCENES[k].build()`): garaje, noche (aparcamiento), atardecer y neón con
+  texturas procedurales en canvas (`TEX`), `RectAreaLight` para tubos/neones y el entorno
+  reflejado generado desde el propio escenario con `pmrem.fromScene` (se cachea en `sceneCache`).
+  En salas cerradas se limita la distancia y el ángulo de cámara (`maxDist`, `minPolar`).
+- Faros: el color se decide por píxel en el sombreador (`lampMaterial`, uniforms `lampU`):
+  delante blanco, detrás rojo, aunque todas las luces vayan en una sola pieza.
 - `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
 
 ## Pendiente (por prioridad)
