@@ -92,6 +92,15 @@ details.cat[open] summary::after{content:"–"}
 .bcard{position:relative}
 .bcard .del{position:absolute;top:4px;right:4px;padding:0 7px;background:var(--panel);font-size:13px;line-height:22px}
 #genTools:empty{display:none}
+#shopResults{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.shopItem{display:flex;gap:10px;align-items:center;padding:6px;border:1px solid var(--line);border-radius:6px;min-width:0}
+.shopItem img{width:76px;height:76px;flex:none;object-fit:contain;background:#fff;border-radius:4px}
+.shopItem .txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.shopItem b{font-size:13px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.shopItem small{color:var(--mute);font-size:12px}
+.shopItem .row{gap:6px}
+.shopItem button,.shopItem a.lnk{padding:3px 9px;font-size:12px}
+.shopItem a.lnk{border:1px solid var(--line);border-radius:6px;color:inherit;text-decoration:none}
 #cmpBar{position:absolute;top:0;bottom:0;width:0;border-left:2px solid var(--accent);z-index:4;cursor:ew-resize}
 #cmpBar[hidden]{display:none}
 #cmpBar::before{content:"";position:absolute;inset:0 -14px}
@@ -353,7 +362,7 @@ button:disabled{opacity:.45;cursor:default}
           <input id="shopQ" type="search" placeholder="Busca cualquier pieza…" aria-label="Buscar pieza en eBay">
           <button class="primary" id="shopGo">Buscar</button>
         </div>
-        <div id="shopResults" class="grid"></div>
+        <div id="shopResults"></div>
         <button id="shopMore" hidden style="margin-top:10px;width:100%">Cargar más</button>
       </div>
     </div>
@@ -3590,18 +3599,18 @@ async function shopStatus(){
   }catch(e){}
 }
 function shopCard(it){
-  const a = document.createElement('a'); a.className = 'card'; a.href = it.url; a.target = '_blank'; a.rel = 'noopener';
-  a.style.textDecoration = 'none'; a.style.color = 'inherit'; a.style.border = '1px solid var(--line)'; a.style.borderRadius = '6px';
-  if(it.image){ const i = new Image(); i.src = it.image; i.alt = ''; i.loading = 'lazy'; i.style.objectFit = 'contain'; i.style.background = '#fff'; a.append(i); }
-  const d = document.createElement('div'), t = document.createElement('b'), sm = document.createElement('small');
-  t.textContent = it.title; t.title = it.title;
+  const w = document.createElement('div'); w.className = 'shopItem';
+  if(it.image){ const i = new Image(); i.src = it.image; i.alt = ''; i.loading = 'lazy'; w.append(i); }
+  const txt = document.createElement('div'); txt.className = 'txt';
+  const t = document.createElement('b'); t.textContent = it.title; t.title = it.title;
   const price = it.price ? Number(it.price).toLocaleString('es-ES',{style:'currency', currency:it.currency||'EUR'}) : '';
-  sm.textContent = [price, it.condition, it.compatible ? '✓ compatible' : ''].filter(Boolean).join(' · ');
-  d.append(t, sm); a.append(d);
-  const w = document.createElement('div'); w.style.display = 'flex'; w.style.flexDirection = 'column'; w.style.gap = '4px';
+  const sm = document.createElement('small'); sm.textContent = [price, it.condition, it.compatible ? '✓ compatible' : ''].filter(Boolean).join(' · ');
+  const row = document.createElement('div'); row.className = 'row';
   const b = document.createElement('button'); b.className = 'primary'; b.textContent = 'Probar en mi coche';
   b.title = 'Coloca en tu coche una pieza 3D parecida a la del anuncio'; b.onclick = ()=>tryListing(it);
-  w.append(a, b); return w;
+  const a = document.createElement('a'); a.className = 'lnk'; a.href = it.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Ver en eBay';
+  row.append(b, a); txt.append(t, sm, row); w.append(txt);
+  return w;
 }
 async function shopSearch(more){
   const q = more ? shop.q : $('shopQ').value.trim(); if(!q) return;
