@@ -21,12 +21,24 @@ uvicorn main:app --reload   # http://localhost:8000
   - `GET /api/models/{uid}`: metadatos si está en caché, 404 si no.
   - `POST /api/models/{uid}/store?meta=…`: recibe el ZIP glTF descargado por el navegador y lo descomprime en `cache/{uid}/`.
   - `POST /api/parts/store?meta=…`: guarda un GLB generado en el navegador (piezas extraídas); `POST /api/parts/{uid}/thumb`: su miniatura PNG.
+  - `GET/POST /api/builds`, `GET/DELETE /api/builds/{id}`: builds guardados en `cache/builds/{id}.json`.
   - `GET /api/cache`: todo lo descargado. `meta.kind` = `car` | `part`; las piezas llevan `category`.
   - `/files/…` sirve `cache/`.
+  - `GET /api/ebay/status`, `GET /api/ebay/search?q&year&make&model&offset`: catálogo de piezas
+    reales (Browse API, token de aplicación cacheado). Primero con `compatibility_filter` en la
+    categoría de recambios del mercado; si no da resultados, búsqueda por texto con el coche.
+    Claves `EBAY_CLIENT_ID`/`EBAY_CLIENT_SECRET` y `EBAY_MARKETPLACE` en `.env`.
+  - `POST /api/ebay/config` (solo localhost): la app guarda las claves; se prueban contra eBay y
+    se escriben en el `.env` local (`save_env`) sin reiniciar. Nunca poner claves en el código.
+  - Tripo (3D con IA): `GET /api/tripo/status`, `POST /api/tripo/config` (clave → `.env` como
+    `TRIPO_API_KEY`), `POST /api/tripo/generate` (recorte PNG/JPEG → subida + tarea `image_to_model`),
+    `GET /api/tripo/task/{id}?meta=` (progreso; al terminar descarga el GLB, que caduca a los 5 min,
+    y lo guarda como pieza `local`/`ai` con `save_part`). `GET /api/img?url=` trae fotos de
+    `*.ebayimg.com` para poder recortarlas en el navegador.
   - `GET /api/search`: búsqueda de respaldo (casi nunca funciona, ver abajo).
 - `static/index.html` — todo el frontend en un único archivo (HTML + CSS + JS).
   three.js **r147** por CDN (jsdelivr, builds UMD de `examples/js`): OrbitControls,
-  GLTFLoader, RoomEnvironment, TransformControls, GLTFExporter.
+  GLTFLoader, RoomEnvironment, TransformControls, GLTFExporter, DecalGeometry.
 
 ## Decisiones importantes (no deshacer sin motivo)
 - **Sketchfab bloquea con anti-bots** (responde 202 vacío) las peticiones desde Python.
@@ -57,14 +69,62 @@ uvicorn main:app --reload   # http://localhost:8000
   "Guardar como pieza" exporta la selección con GLTFExporter en coordenadas del coche
   (`meta.extracted = true`) para que en el mismo modelo caiga en su sitio.
 
+- Piezas a medida (`GEN`, `GEN_SAMPLE`, `GEN_BUILD`): labio, faldones, difusor y aletines.
+  Se mide la carrocería con rayos paralelos a un eje sobre `rayGrid` (rejilla 2D de triángulos
+  en coordenadas `origWorld`, sin rebajar = coordenadas de `addonRoot`); el raycaster de three
+  es demasiado lento para modelos grandes. La forma se construye con `sweepGeometry` (secciones
+  barridas). Las mediciones se guardan en `userData.gen` y los controles solo reconstruyen.
+- Builds: `ops` registra lo que se hace al modelo (roles, recortes, trozos, neumáticos, colores),
+  identificando las piezas por su índice en `baseMeshes()`. Al cargar un build se repiten las
+  operaciones en orden (`replaying = true`), luego estado, llantas y piezas con su transformación.
+  Las piezas de un pack guardan `packIndex`.
+- Colocación automática de piezas de biblioteca (`mountAddon`): `orientPart` gira la pieza por
+  su forma (ancho a lo ancho; alerón: lo ancho arriba y el ala subiendo hacia atrás; escape: tubo
+  a lo largo y boca gorda atrás) y `placePart` la mide contra el coche: alerón en el borde del
+  maletero (`findDeck`) al ancho de la carrocería y apoyado por sus patas (`seatOnBody`); escape y
+  aero bajo el paragolpes (`sampleBumper`). Si no se puede medir, vuelve a la colocación por caja.
+- Pinzas por forma (`detectCalipers`, se ejecuta al cargar): dentro de cada rueda, un trozo suelto
+  (`meshIslands`) que ocupa ≤130° de arco, no llega al buje ni al neumático y va por dentro de la
+  cara de la llanta es pinza; si viene fusionada con disco/llanta se parte.
+- Vinilos (`VINYL`, `buildVinyl`): textura dibujada en canvas (franjas, número, texto o PNG
+  reducido a 1024 px) proyectada con `DecalGeometry` sobre las piezas `body`; se descartan los
+  triángulos que no miran al proyector (`keepFacing`). Cada vinilo guarda punto y normal en
+  coordenadas del coche sin rebajar; cuelgan de `vinylRoot`, que baja con `applyLow`. Las franjas
+  se proyectan desde arriba a lo largo de todo el coche. Van en el build (`vinylSave/vinylLoad`).
+- Wrap completo desde plantilla de rotulista: la imagen (hasta 3000 px, JPEG) se guarda una vez
+  en el build (`wrapSrc`); cada zona (`WRAP_ZONES`: laterales, capó, techo, maletero, frontal,
+  trasera) es un vinilo `wrap` con su recorte, giro en pasos de 90° y espejo, proyectado desde su
+  lado sobre toda la zona. Capó/techo/maletero ocupan un tramo del largo ajustable. Las imágenes
+  con marcas de terceros son del usuario: no se suben al repo.
+- Builds: `buildData()` define el build; `applyBuild(b, reload)` lo aplica (con `reload` recarga el
+  coche y repite `ops`; sin él solo rehace estado, llantas, piezas y vinilos). Lo usan cargar,
+  importar y deshacer. Exportar mete dentro del JSON las piezas propias (`extracted`/`local`) en
+  base64; al importar se suben de nuevo. Coches y piezas de Sketchfab que falten se descargan solos.
+- Deshacer/rehacer (`hist`): foto de `buildData()` tras cada clic/cambio y cada 1,2 s si cambió.
+- Antes/después (`renderCompare`): dos pasadas con scissor; la de serie pone cada malla en
+  `origWorld` con su material original y oculta piezas añadidas y vinilos.
+- Escenarios (`SCENES`, `applyScene`), captura al doble de resolución (`capture`), faros
+  (`lampMaterial` en `applyRole` + focos en `lampGroup`), rake (`rakeMatrix` en `applyLow`, gira
+  carrocería, `addonRoot` y `vinylRoot`), extras de llanta (`wheelExtra`: ancho, offset, labio y
+  letras como anillos hijos del neumático), pintura por zonas (vinilo `tone`: color o carbono).
+- Escenarios 3D (`SCENES[k].build()`): garaje, noche (aparcamiento), atardecer y neón con
+  texturas procedurales en canvas (`TEX`), `RectAreaLight` para tubos/neones y el entorno
+  reflejado generado desde el propio escenario con `pmrem.fromScene` (se cachea en `sceneCache`).
+  En salas cerradas se limita la distancia y el ángulo de cámara (`maxDist`, `minPolar`).
+- Faros: el color se decide por píxel en el sombreador (`lampMaterial`, uniforms `lampU`):
+  delante blanco, detrás rojo, aunque todas las luces vayan en una sola pieza.
+- Tienda (`shopSearch`): año/marca/modelo en `state.vehicle`, deducidos del nombre del coche con
+  `guessVehicle` al cargarlo y editables; va en el build.
+- "Probar en mi coche" (`tryListing`): clasifica el anuncio de eBay por el título (`classifyListing`).
+  Llantas: aplica pulgadas/ancho/ET/color y busca un modelo parecido; labio/faldones/difusor/aletines:
+  pieza a medida (`createGen`); alerón/escape/otros: biblioteca con búsqueda de Sketchfab por palabras
+  clave (`openLibSearch`); pilotos: ahumado. La pieza montada guarda `userData.ebay` (va en el build).
+- "Crear 3D con IA" (`openAi`): se elige foto del anuncio, se recuadra SOLO la pieza (si va el coche
+  entero, la IA hace el coche), se manda a Tripo y la pieza resultante se monta con `installPart`.
+- `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
+
 ## Pendiente (por prioridad)
-1. **Piezas generadas desde la forma del coche** (labio delantero, faldones, difusor,
-   aletines/overfenders) usando raycast sobre la carrocería, con controles de tamaño.
-2. **Guardar builds**: coche + colores + acabados + stance + llantas + piezas añadidas
-   (posición) + piezas ocultas/recortadas. Hoy se pierde todo al cambiar de coche.
-3. Indicador de "calidad para personalizar" al cargar un modelo (% de piezas reconocidas).
-4. Catálogo de mods reales vía **eBay Browse API** (filtro de compatibilidad por vehículo).
-5. Versión Flutter.
+1. Versión Flutter.
 
 ## Cómo trabajar
 - Mario prueba en Windows con Chrome; valida los cambios él mismo y manda capturas.
