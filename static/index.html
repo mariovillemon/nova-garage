@@ -297,6 +297,7 @@ button:disabled{opacity:.45;cursor:default}
           <button id="addonMirror">Duplicar en espejo</button>
           <button id="addonFlip">Girar 180°</button>
           <button id="addonDel">Quitar</button>
+          <a id="addonEbay" class="file" target="_blank" rel="noopener" hidden style="text-decoration:none">Ver en eBay</a>
         </div>
       </div>
     </div>
@@ -1790,11 +1791,12 @@ function buildRims(){
 
 // ---------- alerones, escapes, aerodinámica ----------
 function mountAddon(src, meta, cat){
+  queueMicrotask(()=>{ pendingEbay = null; });   // el anuncio se usa solo para esta pieza
   const B = carBox(), S = B.getSize(new THREE.Vector3()), L = axes.len, A = axes.lat, rs = rearSign();
   if(meta.extracted){
     const obj = new THREE.Group(); obj.add(src);
     obj.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; o.userData.origMat = o.material; } });
-    obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[], meta};
+    obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[], meta, ebay:pendingEbay};
     addonRoot.add(obj); selectAddon(obj); buildAddonList(); openCat('addons');
     flash('Pieza colocada en su posición original. Si sale al revés, usa "Girar 180°".');
     return obj;
@@ -1819,7 +1821,7 @@ function mountAddon(src, meta, cat){
     obj.scale.setScalar(width/longest); obj.position.copy(pos);
   }
   obj.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; o.userData.origMat = o.material; } });
-  obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[], meta};
+  obj.userData = {addon:'part', name:meta.name, category:cat, paint:'original', hid:[], meta, ebay:pendingEbay};
   // ocultar la pieza de serie equivalente, si se reconoce por su nombre
   const STOCK = {spoiler:/spoiler|wing|aler[oó]n/i, exhaust:/exhaust|muffler|tailpipe|escape/i, aero:/splitter|lip|diffuser|difusor|canard/i};
   if(STOCK[cat]){
@@ -1978,6 +1980,8 @@ function selectAddon(obj){
   activeAddon = obj;
   if(obj) tcontrols.attach(obj); else tcontrols.detach();
   $('addonTools').hidden = !obj;
+  const eb = obj && obj.userData.ebay; $('addonEbay').hidden = !eb;
+  if(eb){ $('addonEbay').href = eb.url; $('addonEbay').textContent = eb.price ? `Ver en eBay · ${Number(eb.price).toLocaleString('es-ES',{style:'currency',currency:eb.currency||'EUR'})}` : 'Ver en eBay'; }
   buildGenTools(obj);
   document.querySelectorAll('#addonList .m').forEach(el=>el.classList.toggle('sel', el._obj===obj));
 }
@@ -1986,7 +1990,7 @@ function buildAddonList(){
   if(!addonRoot.children.length){ box.innerHTML='<p class="sub">Añade alerones, escapes o aerodinámica desde el botón Piezas.</p>'; return; }
   addonRoot.children.forEach(obj=>{
     const row = document.createElement('div'); row.className='m'; row._obj = obj;
-    const sp = document.createElement('span'); sp.textContent = `${PART_CATS[obj.userData.category].label}: ${obj.userData.name}`;
+    const sp = document.createElement('span'); sp.textContent = `${obj.userData.ebay ? '🛒 ' : ''}${PART_CATS[obj.userData.category].label}: ${obj.userData.name}`;
     sp.onclick = ()=>selectAddon(obj);
     row.append(sp); box.append(row);
   });
@@ -2615,7 +2619,7 @@ function buildData(){
     vinyls: vinylSave(), wrapSrc: vinyls.some(v=>v.type==='wrap') ? wrapSrc : null,
     addons: addonRoot.children.map(o=>({
       cat:o.userData.category, name:o.userData.name, paint:o.userData.paint,
-      meta:o.userData.meta || null, gen:o.userData.gen ? {type:o.userData.gen.type, p:{...o.userData.gen.p}} : null,
+      ebay:o.userData.ebay || null, meta:o.userData.meta || null, gen:o.userData.gen ? {type:o.userData.gen.type, p:{...o.userData.gen.p}} : null,
       pos:o.position.toArray(), quat:o.quaternion.toArray(), scale:o.scale.toArray(),
       hid:meshIds(o.userData.hid||[])
     }))
@@ -2693,7 +2697,8 @@ async function applyBuild(b, reload=true){
     }catch(e){ console.error(e); }
     if(!obj) continue;
     obj.position.fromArray(a.pos); obj.quaternion.fromArray(a.quat); obj.scale.fromArray(a.scale);
-    paintAddon(obj, a.paint);
+    paintAddon(obj, a.paint); obj.userData.ebay = a.ebay || null;
+    if(a.gen && a.name) obj.userData.name = a.name;
     obj.userData.hid.forEach(m=>m.visible = true);
     obj.userData.hid = meshesById(a.hid||[]); obj.userData.hid.forEach(m=>m.visible = false);
   }
@@ -3592,7 +3597,11 @@ function shopCard(it){
   t.textContent = it.title; t.title = it.title;
   const price = it.price ? Number(it.price).toLocaleString('es-ES',{style:'currency', currency:it.currency||'EUR'}) : '';
   sm.textContent = [price, it.condition, it.compatible ? '✓ compatible' : ''].filter(Boolean).join(' · ');
-  d.append(t, sm); a.append(d); return a;
+  d.append(t, sm); a.append(d);
+  const w = document.createElement('div'); w.style.display = 'flex'; w.style.flexDirection = 'column'; w.style.gap = '4px';
+  const b = document.createElement('button'); b.className = 'primary'; b.textContent = 'Probar en mi coche';
+  b.title = 'Coloca en tu coche una pieza 3D parecida a la del anuncio'; b.onclick = ()=>tryListing(it);
+  w.append(a, b); return w;
 }
 async function shopSearch(more){
   const q = more ? shop.q : $('shopQ').value.trim(); if(!q) return;
@@ -3617,6 +3626,85 @@ $('shopGo').onclick = ()=>shopSearch(false);
 $('shopQ').onkeydown = e=>{ if(e.key==='Enter') shopSearch(false); };
 $('shopMore').onclick = ()=>shopSearch(true);
 ['vYear','vMake','vModel'].forEach(id=>$(id).onchange = ()=>{ state.vehicle = shopVehicle(); });
+// ---------- "Probar en mi coche": de un anuncio de eBay a una pieza 3D ----------
+// Los anuncios solo traen título y fotos. Del título se saca el tipo de pieza, medidas y
+// acabado: las llantas aplican tamaño/ET/color y buscan un modelo parecido; labios,
+// faldones, difusores y aletines se generan a medida; alerones y escapes abren la
+// biblioteca con una búsqueda de Sketchfab hecha con las palabras clave del anuncio.
+let pendingEbay = null;   // anuncio del que viene la próxima pieza que se monte
+const norm = t=>(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const WHEEL_NAMES = ['bbs lm','bbs rs','bbs ch-r','bbs','te37','ce28','volk','rays','work meister','meister','enkei rpf1','rpf1','enkei','oz racing','oz','rotiform',
+  'vossen','hre','advan rg','advan','gram lights','57dr','ssr','konig','japan racing','jr11','fifteen52','watanabe','borbet','momo','sparco','tsw','bbs e88'];
+const COLOR_WORDS = [[/negr|black|schwarz/,'#101114'],[/gunmetal|antracita|anthrazit|gris|grey|gray/,'#3a3d42'],[/plat|silver|silber/,'#c8ccd0'],
+  [/bronce|bronze/,'#7a5a2c'],[/oro|gold|dorad/,'#b8922e'],[/blanc|white|weiss/,'#eeeeea'],[/roj|red|rot\b/,'#b3121c'],[/azul|blue|blau/,'#1d4ed8']];
+const finishOf = t=>/mate\b|matt|matte/.test(t) ? 'Mate' : /satin|satinad/.test(t) ? 'Satinado' : /crom|chrome/.test(t) ? 'Cromado' : /brillo|gloss/.test(t) ? 'Brillo' : null;
+function classifyListing(title){
+  const t = norm(title);
+  if(/llanta|\brin(es)?\b|wheel|felge|jante|\brims?\b/.test(t) && !/tapacubo|embellecedor|tornillo|bolt|tuerca|separador|spacer/.test(t)) return 'wheels';
+  if(/difusor|diffus/.test(t)) return 'diffuser';
+  if(/aletin|overfender|over fender|ensanche|wide ?body|kotflugelverbreiterung|fender flare/.test(t)) return 'fenders';
+  if(/talonera|faldon|side ?skirt|seitenschweller|minigonna/.test(t)) return 'skirts';
+  if(/labio|splitter|front ?lip|frontlippe|spoilerlippe|lip delantero|lama delantera/.test(t)) return 'lip';
+  if(/aleron|spoiler|\bwing\b|heckflugel|ducktail|becquet/.test(t)) return 'spoiler';
+  if(/escape|exhaust|auspuff|silencios|muffler|cola de escape|endrohr|colas? escape/.test(t)) return 'exhaust';
+  if(/piloto|tail ?light|rucklicht|faro|headlight|scheinwerfer/.test(t)) return 'lights';
+  return 'other';
+}
+function tryListing(it){
+  const t = norm(it.title), kind = classifyListing(it.title), carbon = /carbon|carbono|fibra/.test(t);
+  const ebay = {title:it.title, url:it.url, price:it.price, currency:it.currency};
+  if(kind==='wheels'){
+    // 18x8.5 / 18 x 8,5J / ET35
+    const m = t.match(/\b(1[4-9]|2[0-2])\s*(?:["']|pulgadas|zoll|inch)?\s*[x×]\s*(\d{1,2}(?:[.,]5)?)\s*j?\b/);
+    const d = m ? +m[1] : +((t.match(/\b(1[4-9]|2[0-2])\s*(?:"|''|pulgadas|zoll|inch|r\b)/)||[])[1]||0);
+    const w = m ? parseFloat(m[2].replace(',','.')) : 0, et = (t.match(/\bet\s*[:=]?\s*(-?\d{1,3})\b/)||[])[1];
+    const parts = [];
+    if(d){ wheelState.rimIn = Math.min(22, Math.max(15, d)); parts.push(`${d}"`); }
+    if(w && d){ wheelExtra.width = Math.round(Math.min(130, Math.max(80, w/(d*.44)*100))); parts.push(`${w}J`); }
+    if(et!==undefined){ wheelExtra.offset = Math.round(Math.min(40, Math.max(-20, (35 - +et)*.8))); parts.push(`ET${et}`); }
+    const col = COLOR_WORDS.find(([re])=>re.test(t)), fin = finishOf(t);
+    if(col){ state.wheels.color = col[1]; state.wheels.name = it.title; }
+    if(fin) state.wheels.finish = fin;
+    syncUI(); if(wheelState.tpl) buildRims();
+    const name = WHEEL_NAMES.find(n=>t.includes(n));
+    pendingEbay = ebay;
+    openLibSearch('wheels', `${name ? name+' ' : ''}wheel`, `${parts.length ? 'Medidas '+parts.join(' ')+' aplicadas' : 'Color aplicado'}. Elige un modelo 3D parecido de la lista.`);
+    return;
+  }
+  if(['lip','skirts','diffuser','fenders'].includes(kind)){
+    const obj = createGen(kind);
+    if(obj){ obj.userData.ebay = ebay; obj.userData.name = it.title; paintAddon(obj, carbon ? 'carbon' : /negr|black/.test(t) ? 'carbon' : 'body'); buildAddonList(); selectAddon(obj);
+      flash(`${GEN[kind].name} generado a la medida de tu coche según el anuncio. Ajusta el tamaño en Piezas añadidas.`); }
+    return;
+  }
+  if(kind==='lights'){
+    if(/humo|ahumad|smoke|dark|oscur|black|negr/.test(t) && /piloto|tail|ruck/.test(t)){ state.tailSmoke = true; refreshLamps(); flash('Pilotos ahumados aplicados.'); }
+    else { state.lightsOn = true; refreshLamps(); flash('Faros encendidos para ver el efecto. Para cambiar la forma de los faros haría falta un modelo 3D del coche con ellos.'); }
+    return;
+  }
+  if(kind==='spoiler'){
+    const style = /ducktail|duck/.test(t) ? 'ducktail spoiler' : /\bgt\b|wing|swan|cuello de cisne/.test(t) ? 'gt wing' : /lip|labio/.test(t) ? 'lip spoiler' : 'spoiler';
+    const brand = ['voltex','apr','seibon','chargespeed','rocket bunny','varis','mugen','spoon','trd','ings'].find(b=>t.includes(b));
+    pendingEbay = ebay;
+    openLibSearch('spoiler', [brand, style, carbon ? 'carbon' : ''].filter(Boolean).join(' '), 'Elige el alerón 3D más parecido: se colocará solo en tu maletero.');
+    return;
+  }
+  if(kind==='exhaust'){
+    const style = /cuadruple|quad|4 salidas/.test(t) ? 'quad exhaust tip' : /doble|dual|twin/.test(t) ? 'dual exhaust tip' : 'exhaust tip';
+    pendingEbay = ebay;
+    openLibSearch('exhaust', [style, /titan/.test(t) ? 'titanium' : '', carbon ? 'carbon' : ''].filter(Boolean).join(' '), 'Elige el escape 3D más parecido: se colocará solo bajo el paragolpes.');
+    return;
+  }
+  pendingEbay = ebay;
+  openLibSearch('other', it.title.split(/\s+/).slice(0,4).join(' '), 'No reconozco el tipo de pieza: estos son modelos 3D buscados con el título del anuncio.');
+}
+// abre la biblioteca buscando en Sketchfab y, al terminar, da el aviso adecuado
+async function openLibSearch(cat, q, msg){
+  libCat = cat; $('packView').hidden = true; $('libResults').innerHTML = ''; $('lmore').hidden = true;
+  $('lq').value = q; openLib(true);
+  await libSearch(false);
+  flash($('libResults').children.length ? msg : `No hay modelos 3D para "${q}". Cambia la búsqueda en la biblioteca.`);
+}
 $('ebSave').onclick = async ()=>{
   const body = {client_id:$('ebId').value.trim(), client_secret:$('ebSecret').value.trim(), marketplace:$('ebMarket').value};
   if(!body.client_id || !body.client_secret){ flash('Pega el App ID y el Cert ID'); return; }

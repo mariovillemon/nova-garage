@@ -110,6 +110,10 @@ uvicorn main:app --reload   # http://localhost:8000
   delante blanco, detrás rojo, aunque todas las luces vayan en una sola pieza.
 - Tienda (`shopSearch`): año/marca/modelo en `state.vehicle`, deducidos del nombre del coche con
   `guessVehicle` al cargarlo y editables; va en el build.
+- "Probar en mi coche" (`tryListing`): clasifica el anuncio de eBay por el título (`classifyListing`).
+  Llantas: aplica pulgadas/ancho/ET/color y busca un modelo parecido; labio/faldones/difusor/aletines:
+  pieza a medida (`createGen`); alerón/escape/otros: biblioteca con búsqueda de Sketchfab por palabras
+  clave (`openLibSearch`); pilotos: ahumado. La pieza montada guarda `userData.ebay` (va en el build).
 - `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
 
 ## Pendiente (por prioridad)
