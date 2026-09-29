@@ -327,6 +327,20 @@ button:disabled{opacity:.45;cursor:default}
     <summary>Tienda: piezas reales</summary>
     <div class="catbody">
       <p class="sub" id="shopHint">Comprobando eBay…</p>
+      <div id="shopSetup" hidden>
+        <input id="ebId" type="search" placeholder="App ID (Client ID) de Production" aria-label="App ID de eBay" autocomplete="off" style="width:100%;margin-bottom:6px">
+        <input id="ebSecret" type="password" placeholder="Cert ID (Client Secret) de Production" aria-label="Cert ID de eBay" autocomplete="off"
+               style="width:100%;margin-bottom:6px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 10px">
+        <div class="row">
+          <select id="ebMarket" aria-label="Mercado de eBay">
+            <option value="EBAY_ES">eBay España</option><option value="EBAY_DE">eBay Alemania</option>
+            <option value="EBAY_GB">eBay Reino Unido</option><option value="EBAY_US">eBay EE. UU.</option>
+            <option value="EBAY_FR">eBay Francia</option><option value="EBAY_IT">eBay Italia</option>
+          </select>
+          <button class="primary" id="ebSave">Guardar claves</button>
+        </div>
+        <p class="sub" style="margin-top:6px">Se guardan solo en el archivo .env de tu PC; no se suben a ningún sitio.</p>
+      </div>
       <div id="shopBox" hidden>
         <div class="row">
           <input id="vYear" type="search" placeholder="Año" aria-label="Año del coche" style="max-width:74px;flex:none">
@@ -3546,8 +3560,9 @@ async function shopStatus(){
     const j = await (await fetch('/api/ebay/status')).json(); shop.ready = j.configured;
     $('shopHint').textContent = j.configured
       ? `Mercado ${j.marketplace.replace('EBAY_','eBay ')}. Con año, marca y modelo se buscan piezas compatibles con tu coche.`
-      : 'Para ver piezas reales falta poner tus claves de eBay en el archivo .env (EBAY_CLIENT_ID y EBAY_CLIENT_SECRET) y reiniciar el servidor.';
-    $('shopBox').hidden = !j.configured;
+      : 'Pega aquí tus claves de eBay (developer.ebay.com → Application Keys → Production).';
+    $('shopBox').hidden = !j.configured; $('shopSetup').hidden = j.configured;
+    if(j.configured) $('ebMarket').value = j.marketplace;
   }catch(e){}
 }
 function shopCard(it){
@@ -3583,6 +3598,17 @@ $('shopGo').onclick = ()=>shopSearch(false);
 $('shopQ').onkeydown = e=>{ if(e.key==='Enter') shopSearch(false); };
 $('shopMore').onclick = ()=>shopSearch(true);
 ['vYear','vMake','vModel'].forEach(id=>$(id).onchange = ()=>{ state.vehicle = shopVehicle(); });
+$('ebSave').onclick = async ()=>{
+  const body = {client_id:$('ebId').value.trim(), client_secret:$('ebSecret').value.trim(), marketplace:$('ebMarket').value};
+  if(!body.client_id || !body.client_secret){ flash('Pega el App ID y el Cert ID'); return; }
+  flash('Comprobando las claves con eBay…');
+  try{
+    const r = await fetch('/api/ebay/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const j = await r.json(); if(!r.ok) throw new Error(j.detail || 'No se pudieron guardar');
+    $('ebId').value = ''; $('ebSecret').value = '';
+    flash('Claves de eBay guardadas. Ya puedes buscar piezas.'); shopStatus();
+  }catch(e){ flash(e.message); }
+};
 shopStatus();
 
 buildEditor(); demoCar(); resize(); applyScene('estudio'); histReset();

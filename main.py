@@ -323,6 +323,52 @@ def ebay_status():
     return {"configured": bool(EBAY_ID and EBAY_SECRET), "marketplace": EBAY_MARKET}
 
 
+def save_env(values: dict) -> None:
+    """Escribe o actualiza claves en el .env local (nunca se sube: está en .gitignore)."""
+    env = BASE / ".env"
+    lines = env.read_text(encoding="utf-8").splitlines() if env.exists() else []
+    for key, val in values.items():
+        row = f"{key}={val}"
+        idx = next((i for i, l in enumerate(lines) if l.split("=", 1)[0].strip() == key), None)
+        if idx is None:
+            lines.append(row)
+        else:
+            lines[idx] = row
+    env.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+@app.post("/api/ebay/config")
+async def ebay_config(request: Request):
+    """Guarda las claves de eBay desde la app: se prueban contra eBay y, si valen,
+    se escriben en el .env y se activan sin reiniciar."""
+    global EBAY_ID, EBAY_SECRET, EBAY_MARKET
+    only_local(request)
+    try:
+        body = json.loads(await request.body())
+    except ValueError:
+        raise HTTPException(400, "JSON no válido")
+    cid = str(body.get("client_id", "")).strip()
+    secret = str(body.get("client_secret", "")).strip()
+    market = str(body.get("marketplace", "") or EBAY_MARKET).strip().upper()
+    if not cid or not secret:
+        raise HTTPException(400, "Faltan el App ID o el Cert ID")
+    if "SBX" in cid.upper() or secret.upper().startswith("SBX"):
+        raise HTTPException(400, "Son claves de Sandbox (pruebas). Usa las de Production (llevan PRD).")
+    if not re.fullmatch(r"EBAY_[A-Z]{2,3}", market):
+        raise HTTPException(400, "Mercado no válido (ej.: EBAY_ES)")
+    old = (EBAY_ID, EBAY_SECRET, EBAY_MARKET)
+    EBAY_ID, EBAY_SECRET, EBAY_MARKET = cid, secret, market
+    _ebay_token.update(value=None, exp=0.0)
+    try:
+        await ebay_token()   # comprobar que eBay las acepta antes de guardarlas
+    except HTTPException:
+        EBAY_ID, EBAY_SECRET, EBAY_MARKET = old
+        _ebay_token.update(value=None, exp=0.0)
+        raise
+    save_env({"EBAY_CLIENT_ID": cid, "EBAY_CLIENT_SECRET": secret, "EBAY_MARKETPLACE": market})
+    return {"configured": True, "marketplace": market}
+
+
 @app.get("/api/ebay/search")
 async def ebay_search(q: str = Query(..., min_length=1), year: str = "", make: str = "", model: str = "",
                       offset: int = 0):

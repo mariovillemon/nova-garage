@@ -28,6 +28,8 @@ uvicorn main:app --reload   # http://localhost:8000
     reales (Browse API, token de aplicación cacheado). Primero con `compatibility_filter` en la
     categoría de recambios del mercado; si no da resultados, búsqueda por texto con el coche.
     Claves `EBAY_CLIENT_ID`/`EBAY_CLIENT_SECRET` y `EBAY_MARKETPLACE` en `.env`.
+  - `POST /api/ebay/config` (solo localhost): la app guarda las claves; se prueban contra eBay y
+    se escriben en el `.env` local (`save_env`) sin reiniciar. Nunca poner claves en el código.
   - `GET /api/search`: búsqueda de respaldo (casi nunca funciona, ver abajo).
 - `static/index.html` — todo el frontend en un único archivo (HTML + CSS + JS).
   three.js **r147** por CDN (jsdelivr, builds UMD de `examples/js`): OrbitControls,
