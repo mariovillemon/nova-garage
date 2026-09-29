@@ -295,7 +295,16 @@ async def ebay_token() -> str:
     )
     if r.status_code != 200:
         print("eBay token:", r.status_code, r.text[:300])
-        raise HTTPException(502, "eBay no ha aceptado las claves (revisa EBAY_CLIENT_ID y EBAY_CLIENT_SECRET)")
+        try:
+            err = r.json()
+            why = err.get("error_description") or err.get("error") or ""
+        except ValueError:
+            why = r.text[:120]
+        hint = ""
+        if "invalid_client" in (why + r.text):
+            hint = (" Suele ser el Cert ID mal copiado o que el keyset de Production aún no está activo "
+                    "(completa la exención de 'Marketplace Account Deletion' en developer.ebay.com/my/keys).")
+        raise HTTPException(502, f"eBay no ha aceptado las claves: {why or r.status_code}.{hint}")
     j = r.json()
     _ebay_token.update(value=j["access_token"], exp=time.time() + int(j.get("expires_in", 7200)))
     return _ebay_token["value"]
