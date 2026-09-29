@@ -188,14 +188,16 @@ async def store(uid: str, request: Request, meta: str = Query(...)):
 async def store_part(request: Request, meta: str = Query(...)):
     """Guarda una pieza extraída de otro coche (GLB generado en el navegador)."""
     only_local(request)
-    body = await request.body()
+    return save_part(await request.body(), json.loads(meta))
+
+
+def save_part(body: bytes, info: dict) -> dict:
     if not body or body[:4] != b"glTF":
         raise HTTPException(400, "El archivo recibido no es un GLB válido")
     uid = uuid.uuid4().hex
     folder = CACHE / uid
     folder.mkdir()
     (folder / "part.glb").write_bytes(body)
-    info = json.loads(meta)
     info.update(uid=uid, entry="part.glb", cached=True, kind="part")
     (folder / "meta.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     return {**info, "file": f"/files/{uid}/part.glb"}
@@ -336,6 +338,9 @@ def ebay_item(it: dict) -> dict:
         "price": price.get("value"),
         "currency": price.get("currency"),
         "image": img,
+        # todas las fotos del anuncio en grande (para recortar la pieza y crear el 3D con IA)
+        "images": list(dict.fromkeys(re.sub(r"s-l\d+\.", "s-l1600.", u) for u in
+                       [img] + [x.get("imageUrl") for x in it.get("additionalImages") or []] if u))[:8],
         "url": it.get("itemWebUrl"),
         "condition": it.get("condition"),
         "seller": (it.get("seller") or {}).get("username"),
@@ -426,6 +431,146 @@ async def ebay_search(q: str = Query(..., min_length=1), year: str = "", make: s
     items = [ebay_item(it) for it in data.get("itemSummaries") or []]
     return {"results": items, "total": data.get("total", len(items)), "compat": used,
             "next": offset + len(items) if data.get("next") else None}
+
+
+# ---------- 3D con IA a partir de una foto: Tripo (https://platform.tripo3d.ai) ----------
+TRIPO_KEY = os.getenv("TRIPO_API_KEY", "").strip()
+TRIPO_API = "https://api.tripo3d.ai/v2/openapi"
+
+
+def tripo_headers() -> dict:
+    if not TRIPO_KEY:
+        raise HTTPException(503, "Falta la clave de Tripo")
+    return {"Authorization": f"Bearer {TRIPO_KEY}"}
+
+
+def tripo_data(r: httpx.Response, what: str) -> dict:
+    """Respuesta de Tripo: {code: 0, data: {...}}; cualquier otra cosa es un error legible."""
+    try:
+        j = r.json()
+    except ValueError:
+        j = {}
+    if r.status_code != 200 or j.get("code", 0) != 0:
+        print(f"Tripo {what}:", r.status_code, r.text[:300])
+        msg = j.get("message") or j.get("suggestion") or f"HTTP {r.status_code}"
+        if r.status_code in (401, 403):
+            msg = "Tripo no acepta la clave (revísala en platform.tripo3d.ai → API Keys)"
+        raise HTTPException(502, f"Tripo ({what}): {msg}")
+    return j.get("data") or {}
+
+
+@app.get("/api/tripo/status")
+async def tripo_status():
+    if not TRIPO_KEY:
+        return {"configured": False}
+    try:
+        d = tripo_data(await client.get(f"{TRIPO_API}/user/balance", headers=tripo_headers()), "saldo")
+        return {"configured": True, "balance": d.get("balance")}
+    except HTTPException as e:
+        return {"configured": True, "error": e.detail}
+
+
+@app.post("/api/tripo/config")
+async def tripo_config(request: Request):
+    """Guarda la clave de Tripo en el .env local tras comprobarla (consultando el saldo)."""
+    global TRIPO_KEY
+    only_local(request)
+    try:
+        key = str(json.loads(await request.body()).get("key", "")).strip()
+    except (ValueError, AttributeError):
+        raise HTTPException(400, "JSON no válido")
+    if not re.fullmatch(r"[A-Za-z0-9_\-]{16,120}", key):
+        raise HTTPException(400, "Eso no parece una clave de Tripo (suele empezar por tsk_)")
+    old, TRIPO_KEY = TRIPO_KEY, key
+    try:
+        d = tripo_data(await client.get(f"{TRIPO_API}/user/balance", headers=tripo_headers()), "clave")
+    except HTTPException:
+        TRIPO_KEY = old
+        raise
+    save_env({"TRIPO_API_KEY": key})
+    return {"configured": True, "balance": d.get("balance")}
+
+
+@app.get("/api/img")
+async def image_proxy(url: str):
+    """Trae una foto de eBay a través del servidor para poder recortarla en el navegador (CORS)."""
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ""
+    if not (host == "i.ebayimg.com" or host.endswith(".ebayimg.com")):
+        raise HTTPException(400, "Solo se admiten fotos de eBay")
+    r = await client.get(url)
+    if r.status_code != 200:
+        raise HTTPException(502, "No se pudo descargar la foto")
+    from fastapi.responses import Response
+    return Response(r.content, media_type=r.headers.get("content-type", "image/jpeg"))
+
+
+@app.post("/api/tripo/generate")
+async def tripo_generate(request: Request):
+    """Recibe el recorte (PNG/JPEG) de la pieza, lo sube a Tripo y lanza la tarea image_to_model."""
+    only_local(request)
+    body = await request.body()
+    kind = "png" if body[:4] == b"\x89PNG" else "jpg" if body[:2] == b"\xff\xd8" else None
+    if not kind:
+        raise HTTPException(400, "La imagen debe ser PNG o JPEG")
+    up = None
+    for path in ("/upload", "/upload/sts"):   # según la versión de la API
+        r = await client.post(f"{TRIPO_API}{path}", headers=tripo_headers(),
+                              files={"file": (f"pieza.{kind}", body, f"image/{'png' if kind == 'png' else 'jpeg'}")})
+        if r.status_code != 404:
+            up = tripo_data(r, "subida")
+            break
+    token = up and (up.get("image_token") or up.get("file_token") or up.get("token"))
+    if not token:
+        raise HTTPException(502, "Tripo no ha devuelto la imagen subida")
+    task = {"type": "image_to_model", "file": {"type": kind, "file_token": token}, "texture": True, "pbr": True}
+    d = tripo_data(await client.post(f"{TRIPO_API}/task", headers=tripo_headers(), json=task), "tarea")
+    return {"task_id": d.get("task_id")}
+
+
+def tripo_url(v) -> str | None:
+    if isinstance(v, str):
+        return v
+    if isinstance(v, dict):
+        return v.get("url")
+    return None
+
+
+@app.get("/api/tripo/task/{task_id}")
+async def tripo_task(task_id: str, request: Request, meta: str = Query("{}")):
+    """Progreso de la tarea. Al terminar se descarga el GLB (Tripo lo borra a los 5 min) y se
+    guarda como pieza propia de la biblioteca."""
+    only_local(request)
+    if not re.fullmatch(r"[A-Za-z0-9\-]{8,80}", task_id):
+        raise HTTPException(400, "Tarea no válida")
+    d = tripo_data(await client.get(f"{TRIPO_API}/task/{task_id}", headers=tripo_headers()), "estado")
+    status = d.get("status")
+    if status != "success":
+        return {"status": status, "progress": d.get("progress", 0)}
+    out = d.get("output") or {}
+    url = tripo_url(out.get("pbr_model")) or tripo_url(out.get("model")) or tripo_url(out.get("base_model"))
+    if not url:
+        raise HTTPException(502, "Tripo ha terminado pero no ha dado el modelo")
+    r = await client.get(url)
+    if r.status_code != 200:
+        raise HTTPException(502, "No se pudo descargar el modelo de Tripo")
+    info = json.loads(meta)
+    info.update(local=True, ai=True, author="Generado con IA (Tripo)", license="propia")
+    part = save_part(r.content, info)
+    thumb = tripo_url(out.get("rendered_image"))
+    if thumb:
+        try:
+            t = await client.get(thumb)
+            if t.status_code == 200:
+                ext = "webp" if t.content[:4] == b"RIFF" else "png" if t.content[:4] == b"\x89PNG" else "jpg"
+                (CACHE / part["uid"] / f"thumb.{ext}").write_bytes(t.content)
+                part["thumb"] = f"/files/{part['uid']}/thumb.{ext}"
+                meta_file = CACHE / part["uid"] / "meta.json"
+                m = json.loads(meta_file.read_text(encoding="utf-8")); m["thumb"] = part["thumb"]
+                meta_file.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
+        except httpx.HTTPError:
+            pass
+    return {"status": "success", "part": part}
 
 
 app.mount("/files", StaticFiles(directory=CACHE), name="files")

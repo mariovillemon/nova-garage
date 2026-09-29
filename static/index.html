@@ -109,6 +109,16 @@ details.cat[open] summary::after{content:"–"}
 button:disabled{opacity:.45;cursor:default}
 #stage.darkscene #brand,#stage.darkscene #credit{color:#e9ecef}
 #stage.darkscene #brand small,#stage.darkscene #hint{color:#98a1ab}
+#aiEd{position:fixed;inset:0;z-index:20;background:rgba(10,12,15,.94);display:flex;flex-direction:column;padding:12px 16px;gap:10px;color:#e9ecef}
+#aiEd[hidden]{display:none}
+#aiKeyBox[hidden]{display:none}
+#aiEd button,#aiEd select{color:#e9ecef;border-color:#3a414a;background:transparent}
+#aiEd button.primary{background:#f2b705;color:#14171b;border-color:#f2b705}
+#aiEd button[aria-pressed="true"]{border-color:#f2b705;box-shadow:0 0 0 2px #f2b705}
+#aiEd option{color:#14171b}
+#aiEd canvas{flex:1;min-height:0;width:100%;cursor:crosshair;touch-action:none}
+#aiEd p{margin:0;font-size:13px;color:#98a1ab}
+#aiEd input{flex:1;min-width:0;font:inherit;color:#e9ecef;background:#1c2026;border:1px solid #3a414a;border-radius:6px;padding:6px 10px}
 #wrapEd{position:fixed;inset:0;z-index:20;background:rgba(10,12,15,.92);display:flex;flex-direction:column;padding:12px 16px;gap:10px;color:#e9ecef}
 #wrapEd[hidden]{display:none}
 #wrapEd .row button{color:#e9ecef;border-color:#3a414a}
@@ -130,6 +140,28 @@ button:disabled{opacity:.45;cursor:default}
   <div class="row" id="wrapZones"></div>
   <p id="wrapHelp">Elige una zona y arrastra un rectángulo sobre la plantilla para marcarla. Se aplica al soltar.</p>
   <canvas id="wrapCv"></canvas>
+</div>
+<div id="aiEd" hidden>
+  <div class="row" style="justify-content:space-between;flex-wrap:nowrap">
+    <b style="font:700 20px 'Barlow Condensed',sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Crear 3D con IA · <span id="aiTitle" style="font-weight:500"></span></b>
+    <button id="aiClose">Cerrar</button>
+  </div>
+  <div class="row" id="aiKeyBox" hidden>
+    <input id="aiKey" type="password" placeholder="Clave de Tripo (empieza por tsk_)" aria-label="Clave de Tripo" autocomplete="off">
+    <button class="primary" id="aiKeySave">Guardar clave</button>
+    <a href="https://platform.tripo3d.ai" target="_blank" rel="noopener" style="color:#f2b705">Conseguir clave</a>
+  </div>
+  <div class="row" id="aiThumbs"></div>
+  <p id="aiHelp">Elige la foto donde mejor se vea la pieza y arrastra un recuadro que la rodee SOLO a ella (sin el coche). Cuanto más limpio el fondo, mejor el resultado.</p>
+  <canvas id="aiCv"></canvas>
+  <div class="row">
+    <select id="aiCat" aria-label="Tipo de pieza">
+      <option value="spoiler">Alerón</option><option value="wheels">Llanta</option><option value="exhaust">Escape</option>
+      <option value="aero">Aerodinámica</option><option value="bodykit">Carrocería</option><option value="other">Otros</option>
+    </select>
+    <button class="primary" id="aiGo">Generar 3D</button>
+    <span id="aiInfo" style="font-size:13px;color:#98a1ab"></span>
+  </div>
 </div>
 <div id="stage">
   <div id="brand">Nøva Garage<small>Configurador de modificaciones</small></div>
@@ -3110,6 +3142,7 @@ $('wrapFile').onchange = e=>{
   rd.readAsDataURL(f);
 };
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('wrapEd').hidden) $('wrapClose').click(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('aiEd').hidden) $('aiEd').hidden = true; });
 
 // =====================================================================
 //  Deshacer / rehacer
@@ -3609,7 +3642,9 @@ function shopCard(it){
   const b = document.createElement('button'); b.className = 'primary'; b.textContent = 'Probar en mi coche';
   b.title = 'Coloca en tu coche una pieza 3D parecida a la del anuncio'; b.onclick = ()=>tryListing(it);
   const a = document.createElement('a'); a.className = 'lnk'; a.href = it.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Ver en eBay';
-  row.append(b, a); txt.append(t, sm, row); w.append(txt);
+  const g = document.createElement('button'); g.textContent = 'Crear 3D con IA';
+  g.title = 'Genera un modelo 3D a partir de la foto del anuncio (Tripo)'; g.onclick = ()=>openAi(it);
+  row.append(b, g, a); txt.append(t, sm, row); w.append(txt);
   return w;
 }
 async function shopSearch(more){
@@ -3714,6 +3749,117 @@ async function openLibSearch(cat, q, msg){
   await libSearch(false);
   flash($('libResults').children.length ? msg : `No hay modelos 3D para "${q}". Cambia la búsqueda en la biblioteca.`);
 }
+// ---------- Crear 3D con IA (Tripo) a partir de una foto del anuncio ----------
+// Se recorta SOLO la pieza en la foto (si se manda el coche entero, la IA reconstruiría el
+// coche), se envía a Tripo y, cuando termina, el modelo se guarda en la biblioteca y se
+// coloca solo con la colocación automática de piezas.
+const ai = {item:null, img:null, crop:null, drag:null, busy:false};
+const AI_CAT = {wheels:'wheels', spoiler:'spoiler', exhaust:'exhaust', lip:'aero', diffuser:'aero', skirts:'bodykit', fenders:'bodykit', lights:'other', other:'other'};
+async function aiStatus(){
+  try{
+    const st = await (await fetch('/api/tripo/status')).json();
+    $('aiKeyBox').hidden = st.configured && !st.error;
+    $('aiInfo').textContent = st.error ? st.error : st.balance!=null ? `Saldo de Tripo: ${st.balance} créditos` : '';
+    return st.configured && !st.error;
+  }catch(e){ return false; }
+}
+async function openAi(it){
+  ai.item = it; ai.crop = null; ai.img = null;
+  $('aiEd').hidden = false; $('aiCat').value = AI_CAT[classifyListing(it.title)] || 'other';
+  $('aiTitle').textContent = it.title;
+  aiStatus();
+  const imgs = (it.images && it.images.length ? it.images : [it.image]).filter(Boolean);
+  $('aiThumbs').innerHTML = '';
+  imgs.forEach((u,i)=>{
+    const b = document.createElement('button'); b.style.padding = '2px';
+    const im = new Image(); im.src = u; im.alt = `Foto ${i+1}`; im.style.cssText = 'width:64px;height:64px;object-fit:contain;background:#fff;display:block';
+    b.append(im); b.onclick = ()=>aiLoad(u, b); $('aiThumbs').append(b);
+    if(i===0) aiLoad(u, b);
+  });
+  if(!imgs.length) $('aiHelp').textContent = 'Este anuncio no tiene fotos.';
+}
+async function aiLoad(url, btn){
+  document.querySelectorAll('#aiThumbs button').forEach(b=>b.setAttribute('aria-pressed', b===btn));
+  try{
+    const blob = await (await fetch('/api/img?url='+encodeURIComponent(url))).blob();
+    ai.img = await loadImg(URL.createObjectURL(blob)); ai.crop = null; aiDraw();
+  }catch(e){ flash('No se pudo cargar la foto'); }
+}
+function aiLayout(){
+  const cv = $('aiCv'), r = cv.getBoundingClientRect();
+  cv.width = r.width*devicePixelRatio; cv.height = r.height*devicePixelRatio;
+  const k = Math.min(cv.width/ai.img.width, cv.height/ai.img.height);
+  return {cv, ox:(cv.width-ai.img.width*k)/2, oy:(cv.height-ai.img.height*k)/2, W:ai.img.width*k, H:ai.img.height*k};
+}
+function aiDraw(){
+  if(!ai.img) return;
+  const g = aiLayout(), cx = g.cv.getContext('2d');
+  cx.clearRect(0,0,g.cv.width,g.cv.height); cx.drawImage(ai.img, g.ox, g.oy, g.W, g.H);
+  const c = ai.drag ? ai.drag.c : ai.crop;
+  if(c){
+    const x = g.ox+c[0]*g.W, y = g.oy+c[1]*g.H, w = (c[2]-c[0])*g.W, h = (c[3]-c[1])*g.H;
+    cx.fillStyle = 'rgba(0,0,0,.45)';   // oscurece lo que queda fuera del recuadro
+    cx.fillRect(g.ox, g.oy, g.W, y-g.oy); cx.fillRect(g.ox, y+h, g.W, g.oy+g.H-y-h);
+    cx.fillRect(g.ox, y, x-g.ox, h); cx.fillRect(x+w, y, g.ox+g.W-x-w, h);
+    cx.lineWidth = 2*devicePixelRatio; cx.strokeStyle = '#f2b705'; cx.strokeRect(x,y,w,h);
+  }
+}
+{
+  const cv = $('aiCv');
+  const at = e=>{ const g = aiLayout(), r = cv.getBoundingClientRect();
+    return [Math.min(1,Math.max(0,((e.clientX-r.left)*devicePixelRatio-g.ox)/g.W)), Math.min(1,Math.max(0,((e.clientY-r.top)*devicePixelRatio-g.oy)/g.H))]; };
+  cv.onpointerdown = e=>{ if(!ai.img) return; cv.setPointerCapture(e.pointerId); const p = at(e); ai.drag = {p, c:[...p,...p]}; };
+  cv.onpointermove = e=>{ if(!ai.drag) return; const p = at(e), a = ai.drag.p;
+    ai.drag.c = [Math.min(a[0],p[0]), Math.min(a[1],p[1]), Math.max(a[0],p[0]), Math.max(a[1],p[1])]; aiDraw(); };
+  cv.onpointerup = ()=>{ if(!ai.drag) return; const c = ai.drag.c; ai.drag = null;
+    ai.crop = (c[2]-c[0] > .03 && c[3]-c[1] > .03) ? c : null; aiDraw(); };
+  addEventListener('resize', ()=>{ if(!$('aiEd').hidden) aiDraw(); });
+}
+$('aiClose').onclick = ()=>{ $('aiEd').hidden = true; };
+$('aiKeySave').onclick = async ()=>{
+  const key = $('aiKey').value.trim(); if(!key) return;
+  flash('Comprobando la clave con Tripo…');
+  try{
+    const r = await fetch('/api/tripo/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key})});
+    const j = await r.json(); if(!r.ok) throw new Error(j.detail || 'No se pudo guardar');
+    $('aiKey').value = ''; flash('Clave de Tripo guardada'); aiStatus();
+  }catch(e){ flash(e.message); }
+};
+$('aiGo').onclick = async ()=>{
+  if(ai.busy){ flash('Ya hay una pieza generándose'); return; }
+  if(!ai.img){ flash('Elige una foto'); return; }
+  if(!(await aiStatus())){ flash('Pega primero tu clave de Tripo'); return; }
+  if(!ai.crop && !confirm('No has recuadrado la pieza. Si la foto sale el coche entero, la IA hará el coche. ¿Usar la foto completa?')) return;
+  // recorte a como mucho 1024 px de lado
+  const [x0,y0,x1,y1] = ai.crop || [0,0,1,1], sw = (x1-x0)*ai.img.width, sh = (y1-y0)*ai.img.height, k = Math.min(1, 1024/Math.max(sw,sh));
+  const cv = document.createElement('canvas'); cv.width = Math.round(sw*k); cv.height = Math.round(sh*k);
+  cv.getContext('2d').drawImage(ai.img, x0*ai.img.width, y0*ai.img.height, sw, sh, 0, 0, cv.width, cv.height);
+  const blob = await new Promise(r=>cv.toBlob(r, 'image/png'));
+  const it = ai.item, cat = $('aiCat').value;
+  const ebay = {title:it.title, url:it.url, price:it.price, currency:it.currency};
+  const meta = {name:it.title.slice(0,90), category:cat, ebay};
+  ai.busy = true; $('aiEd').hidden = true;
+  flash('Enviando la foto a Tripo…');
+  try{
+    const r = await fetch('/api/tripo/generate', {method:'POST', body:blob}), j = await r.json();
+    if(!r.ok) throw new Error(j.detail || 'No se pudo crear la tarea');
+    // seguir el progreso sin bloquear la app
+    for(;;){
+      await new Promise(res=>setTimeout(res, 3000));
+      const q = await fetch(`/api/tripo/task/${j.task_id}?meta=${encodeURIComponent(JSON.stringify(meta))}`), s = await q.json();
+      if(!q.ok) throw new Error(s.detail || 'Error consultando Tripo');
+      if(s.status==='success'){
+        flash('Modelo 3D listo. Colocándolo…');
+        pendingEbay = ebay; refreshLib();
+        await installPart(s.part);
+        break;
+      }
+      if(['failed','banned','expired','cancelled','unknown'].includes(s.status)) throw new Error(`Tripo no ha podido generar la pieza (${s.status})`);
+      flash(`Generando 3D con IA… ${Math.round(s.progress||0)} %`);
+    }
+  }catch(e){ flash(e.message); console.error(e); }
+  finally{ ai.busy = false; }
+};
 $('ebSave').onclick = async ()=>{
   const body = {client_id:$('ebId').value.trim(), client_secret:$('ebSecret').value.trim(), marketplace:$('ebMarket').value};
   if(!body.client_id || !body.client_secret){ flash('Pega el App ID y el Cert ID'); return; }

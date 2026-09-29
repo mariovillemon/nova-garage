@@ -30,6 +30,11 @@ uvicorn main:app --reload   # http://localhost:8000
     Claves `EBAY_CLIENT_ID`/`EBAY_CLIENT_SECRET` y `EBAY_MARKETPLACE` en `.env`.
   - `POST /api/ebay/config` (solo localhost): la app guarda las claves; se prueban contra eBay y
     se escriben en el `.env` local (`save_env`) sin reiniciar. Nunca poner claves en el código.
+  - Tripo (3D con IA): `GET /api/tripo/status`, `POST /api/tripo/config` (clave → `.env` como
+    `TRIPO_API_KEY`), `POST /api/tripo/generate` (recorte PNG/JPEG → subida + tarea `image_to_model`),
+    `GET /api/tripo/task/{id}?meta=` (progreso; al terminar descarga el GLB, que caduca a los 5 min,
+    y lo guarda como pieza `local`/`ai` con `save_part`). `GET /api/img?url=` trae fotos de
+    `*.ebayimg.com` para poder recortarlas en el navegador.
   - `GET /api/search`: búsqueda de respaldo (casi nunca funciona, ver abajo).
 - `static/index.html` — todo el frontend en un único archivo (HTML + CSS + JS).
   three.js **r147** por CDN (jsdelivr, builds UMD de `examples/js`): OrbitControls,
@@ -114,6 +119,8 @@ uvicorn main:app --reload   # http://localhost:8000
   Llantas: aplica pulgadas/ancho/ET/color y busca un modelo parecido; labio/faldones/difusor/aletines:
   pieza a medida (`createGen`); alerón/escape/otros: biblioteca con búsqueda de Sketchfab por palabras
   clave (`openLibSearch`); pilotos: ahumado. La pieza montada guarda `userData.ebay` (va en el build).
+- "Crear 3D con IA" (`openAi`): se elige foto del anuncio, se recuadra SOLO la pieza (si va el coche
+  entero, la IA hace el coche), se manda a Tripo y la pieza resultante se monta con `installPart`.
 - `updateQuality()` muestra bajo el nombre del coche la calidad para personalizar.
 
 ## Pendiente (por prioridad)
