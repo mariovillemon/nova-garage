@@ -1204,14 +1204,33 @@ function card(m, onClick){
   b.onclick = ()=>onClick(m, b);
   return b;
 }
+// Token de Sketchfab: el guardado en .env o, si falta o no vale, se pide, se comprueba
+// contra Sketchfab desde el navegador y se guarda en el .env local.
+async function sketchfabToken(ask){
+  if(!ask){
+    const r = await fetch('/api/token');
+    if(r.ok){ const {token} = await r.json(); if(token && !/pega_aqui/i.test(token)) return token; }
+  }
+  for(;;){
+    const t = prompt('Sketchfab no acepta el token guardado.\nPega tu API Token (sketchfab.com/settings/password → "API Token"):');
+    if(t===null) throw new Error('Sin token de Sketchfab no se pueden descargar modelos nuevos');
+    const tok = t.trim(); if(!tok) continue;
+    const chk = await fetch('https://api.sketchfab.com/v3/me', {headers:{Authorization:`Token ${tok}`}});
+    if(!chk.ok){ alert(`Ese token no vale (Sketchfab respondió ${chk.status}). Cópialo otra vez.`); continue; }
+    const r = await fetch('/api/sketchfab/token', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:tok})});
+    if(!r.ok){ alert((await r.json()).detail || 'No se pudo guardar'); continue; }
+    flash('Token de Sketchfab guardado'); return tok;
+  }
+}
 // Descarga un modelo de Sketchfab (o lo coge de caché). extra se guarda en meta.json.
 async function downloadModel(m, extra={}){
   let r = await fetch(`/api/models/${m.uid}`);
   if(r.ok) return await r.json();
   flash('Pidiendo descarga a Sketchfab…');
-  const {token} = await (await fetch('/api/token')).json();
-  r = await fetch(`https://api.sketchfab.com/v3/models/${m.uid}/download`,
-                  {headers:{Authorization:`Token ${token}`}});
+  let token = await sketchfabToken(false);
+  const ask = tk=>fetch(`https://api.sketchfab.com/v3/models/${m.uid}/download`, {headers:{Authorization:`Token ${tk}`}});
+  r = await ask(token);
+  if(r.status === 401){ token = await sketchfabToken(true); r = await ask(token); }
   if(r.status === 401) throw new Error('Token de Sketchfab no válido');
   if(!r.ok) throw new Error(`Sketchfab respondió ${r.status} al pedir la descarga`);
   const gltf = (await r.json()).gltf;

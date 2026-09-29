@@ -132,6 +132,22 @@ def token(request: Request):
     return {"token": TOKEN}
 
 
+@app.post("/api/sketchfab/token")
+async def set_sketchfab_token(request: Request):
+    """La app guarda el token de Sketchfab (ya comprobado por el navegador) en el .env local."""
+    global TOKEN
+    only_local(request)
+    try:
+        tok = str(json.loads(await request.body()).get("token", "")).strip()
+    except (ValueError, AttributeError):
+        raise HTTPException(400, "JSON no válido")
+    if not re.fullmatch(r"[A-Za-z0-9]{16,80}", tok):
+        raise HTTPException(400, "Eso no parece un token de Sketchfab")
+    save_env({"SKETCHFAB_TOKEN": tok})
+    TOKEN = tok
+    return {"ok": True}
+
+
 @app.get("/api/models/{uid}")
 def cached_model(uid: str):
     """Devuelve el modelo si ya está en caché; 404 si hay que descargarlo."""
